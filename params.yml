@@ -1,0 +1,57 @@
+# ============================================================
+# sherlock - configuration centrale
+# Toutes les constantes du projet sont ici.
+# ============================================================
+
+project:
+  name: "sherlock"
+  version: "0.1.0"
+  language: "fr"
+
+paths:
+  data_dir: "data"
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  models_dir: "models"
+  reports_dir: "reports"
+  logs_dir: "logs"
+
+io:
+  separator: "|"
+  encoding: "utf-8"
+
+parties:
+  - "EELV"
+  - "LFI"
+  - "LR"
+  - "PCF"
+  - "PS"
+  - "Reconquête"
+  - "Renaissance"
+  - "RN"
+
+cleaning:
+  min_words: 3
+  min_words_strict: 5
+  chunk_size: 120
+  mention_token: "__MENTION__"
+
+balance:
+  per_party: 1392
+  seed: 42
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  seed: 42
+
+model:
+  name: "almanach/camembertav2-base"
+  max_length: 512
+  batch_size: 32
+  learning_rate: 2.0e-5
+  epochs: 5
+  warmup_ratio: 0.1
+  early_stopping_patience: 2

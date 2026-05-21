@@ -1,10 +1,66 @@
-# Python-generated files
+.gitignore << 'EOF'
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
 build/
 dist/
-wheels/
-*.egg-info
+*.egg-info/
+*.egg
 
-# Virtual environments
-.venv
+# Virtual envs
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Env & secrets
+.env
+.env.local
+*.db
+accounts.db
+*.key
+*.pem
+credentials.json
+
+# Data & models (versionnés par DVC plus tard)
+data/raw/
+data/interim/
+data/processed/
+data/external/
+models/
+*.pkl
+*.joblib
+*.pt
+*.bin
+*.safetensors
+
+# Logs
+logs/
+*.log
+
+# ML tracking
+mlruns/
+wandb/
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Ancien projet (à migrer progressivement, retiré du repo à la fin)
+GraduateProject/
