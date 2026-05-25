@@ -1,3 +1,8 @@
+"""
+Tests pour le module model/
+On mocke les modèles HuggingFace pour ne pas télécharger de poids.
+"""
+
 import pytest
 import torch
 from unittest.mock import patch, MagicMock
@@ -12,8 +17,10 @@ def test_party_classifier_forward():
     mock_encoder.config.hidden_size = 768
 
     with patch("sherlock.model.classifier.AutoModel.from_pretrained", return_value=mock_encoder):
-        from sherlock.model.classifier import PartyClassifier
-        model  = PartyClassifier(n_classes=8)
+        from importlib import reload
+        import sherlock.model.classifier as clf_module
+        reload(clf_module)
+        model  = clf_module.PartyClassifier(n_classes=8)
         ids    = torch.zeros(2, 10, dtype=torch.long)
         mask   = torch.ones(2, 10, dtype=torch.long)
         logits = model(ids, mask)
@@ -39,21 +46,29 @@ def test_party_classifier_n_classes():
 
 def test_predict_text_output_structure():
     """predict_text retourne un dict avec les bonnes clés."""
+    # On mocke tout ce qui touche au modèle et aux poids
     mock_tokenizer = MagicMock()
     mock_tokenizer.return_value = {
         "input_ids":      torch.zeros(1, 10, dtype=torch.long),
         "attention_mask": torch.ones(1, 10, dtype=torch.long),
     }
-    mock_model = MagicMock()
-    mock_model.return_value = torch.randn(1, 8)
-    mock_model.eval = MagicMock()
+
+    # Instance mockée qui retourne un vrai tensor
+    mock_instance = MagicMock(spec=[
+        "eval", "load_state_dict", "to", "__call__"
+    ])
+    mock_instance.to.return_value     = mock_instance
+    mock_instance.return_value        = torch.randn(1, 8)
+    mock_instance.load_state_dict     = MagicMock(return_value=None)
 
     with patch("sherlock.model.predict.get_tokenizer", return_value=mock_tokenizer), \
-         patch("sherlock.model.predict.PartyClassifier", return_value=mock_model), \
+         patch("sherlock.model.predict.PartyClassifier", return_value=mock_instance), \
          patch("sherlock.model.predict.torch.load", return_value={}), \
-         patch("sherlock.model.predict.Path.exists", return_value=True):
-        from sherlock.model.predict import predict_text
-        result = predict_text("test text", model_path=MagicMock())
+         patch("torch.nn.Module.load_state_dict", return_value=None):
+        from importlib import reload
+        import sherlock.model.predict as predict_module
+        reload(predict_module)
+        result = predict_module.predict_text("test text", model_path=MagicMock())
 
     assert "parti" in result
     assert "confidence" in result
