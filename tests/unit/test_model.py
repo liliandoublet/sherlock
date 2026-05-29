@@ -6,9 +6,8 @@ On mocke les modèles HuggingFace pour ne pas télécharger de poids.
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
 
-pytest.importorskip("torch")
+torch = pytest.importorskip("torch")
 
 
 def test_party_classifier_forward():
