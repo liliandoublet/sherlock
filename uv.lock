@@ -3433,6 +3433,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "rich" },
+    { name = "tqdm" },
     { name = "typer" },
 ]
 
@@ -3445,7 +3446,6 @@ data = [
     { name = "pandera" },
     { name = "pyarrow" },
     { name = "scikit-learn" },
-    { name = "tqdm" },
 ]
 dev = [
     { name = "ipykernel" },
@@ -3510,7 +3510,7 @@ requires-dist = [
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.13" },
     { name = "tenacity", marker = "extra == 'scraping'", specifier = ">=9.0" },
     { name = "torch", marker = "extra == 'ml'", specifier = ">=2.5" },
-    { name = "tqdm", marker = "extra == 'data'", specifier = ">=4.66" },
+    { name = "tqdm", specifier = ">=4.66" },
     { name = "transformers", marker = "extra == 'ml'", specifier = ">=4.46" },
     { name = "typer", specifier = ">=0.12" },
 ]

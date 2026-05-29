@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "typer>=0.12",
     "rich>=13.9",
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +29,6 @@ data = [
     "ftfy>=6.3",
     "emoji>=2.14",
     "langdetect>=1.0.9",
-    "tqdm>=4.66",
     "scikit-learn>=1.5",
 ]
 scraping = [

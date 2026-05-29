@@ -24,7 +24,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --extra data --extra scraping --extra llm --extra dev
+        run: |
+          uv sync --extra data --extra scraping --extra llm --extra dev
+          uv pip install tqdm scikit-learn
 
       - name: Lint with ruff
         run: uv run ruff check src/ tests/
