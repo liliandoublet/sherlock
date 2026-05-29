@@ -3,6 +3,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+pytest.importorskip("transformers")
+
 from sherlock.annotate.irony import annotate_irony
 from sherlock.annotate.pipeline import annotate
 from sherlock.annotate.sentiment import annotate_sentiment
