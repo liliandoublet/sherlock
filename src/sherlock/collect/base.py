@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 from loguru import logger
@@ -14,13 +15,12 @@ class BaseScraper(ABC):
     """
 
     # Colonnes obligatoires dans tout DataFrame produit
-    SCHEMA = ["texte", "compte", "parti", "date", "source", "media"]
+    SCHEMA: ClassVar[list[str]] = ["texte", "compte", "parti", "date", "source", "media"]
 
     def __init__(self, parti: str):
         if parti not in cfg.parties and parti != "aucun":
             raise ValueError(
-                f"Parti '{parti}' inconnu. "
-                f"Valeurs acceptées : {cfg.parties + ['aucun']}"
+                f"Parti '{parti}' inconnu. Valeurs acceptées : {[*cfg.parties, 'aucun']}"
             )
         self.parti = parti
         self.logger = logger.bind(scraper=self.__class__.__name__)
@@ -36,9 +36,7 @@ class BaseScraper(ABC):
         """Vérifie que le DataFrame respecte le schéma."""
         missing = [c for c in self.SCHEMA if c not in df.columns]
         if missing:
-            raise ValueError(
-                f"{self.__class__.__name__} : colonnes manquantes {missing}"
-            )
+            raise ValueError(f"{self.__class__.__name__} : colonnes manquantes {missing}")
         return df[self.SCHEMA]
 
     def save(self, df: pd.DataFrame, out_path: Path) -> None:
