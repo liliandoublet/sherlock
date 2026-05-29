@@ -1,10 +1,9 @@
 import pandas as pd
-from transformers import pipeline
-from tqdm.auto import tqdm
 from loguru import logger
+from tqdm.auto import tqdm
+from transformers import pipeline
 
 from sherlock.config import cfg
-
 
 MODEL_NAME = "mrm8488/camembert-base-finetuned-irony-detection"
 
@@ -52,7 +51,7 @@ def annotate_irony(
         scores.extend(round(r["score"], 4) for r in results)
 
     df = df.copy()
-    df["ironie"]       = labels
+    df["ironie"] = labels
     df["ironie_score"] = scores
 
     dist = df["ironie"].value_counts().to_dict()

@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import torch
-from sklearn.preprocessing import LabelEncoder
 from loguru import logger
+from sklearn.preprocessing import LabelEncoder
 
 from sherlock.config import cfg
-from sherlock.model.tokenizer import get_tokenizer
 from sherlock.model.classifier import PartyClassifier
+from sherlock.model.tokenizer import get_tokenizer
 
 
 def predict_text(
@@ -19,9 +19,9 @@ def predict_text(
     Returns:
         Dict avec 'parti', 'confidence', et 'all_scores'.
     """
-    device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = get_tokenizer()
-    le        = LabelEncoder()
+    le = LabelEncoder()
     le.fit(cfg.parties)
 
     model = PartyClassifier(n_classes=len(le.classes_)).to(device)
@@ -41,17 +41,14 @@ def predict_text(
             encoding["input_ids"].to(device),
             encoding["attention_mask"].to(device),
         )
-        probs      = torch.softmax(logits, dim=-1).squeeze().cpu()
-        pred_idx   = probs.argmax().item()
+        probs = torch.softmax(logits, dim=-1).squeeze().cpu()
+        pred_idx = probs.argmax().item()
         confidence = round(probs[pred_idx].item(), 4)
 
-    all_scores = {
-        label: round(probs[i].item(), 4)
-        for i, label in enumerate(le.classes_)
-    }
+    all_scores = {label: round(probs[i].item(), 4) for i, label in enumerate(le.classes_)}
 
     result = {
-        "parti":      le.classes_[pred_idx],
+        "parti": le.classes_[pred_idx],
         "confidence": confidence,
         "all_scores": all_scores,
     }

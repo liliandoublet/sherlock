@@ -1,10 +1,9 @@
 import pandas as pd
-from transformers import pipeline
-from tqdm.auto import tqdm
 from loguru import logger
+from tqdm.auto import tqdm
+from transformers import pipeline
 
 from sherlock.config import cfg
-
 
 MODEL_NAME = "tblard/tf-allocine"
 
@@ -36,7 +35,7 @@ def annotate_sentiment(
     classifier = pipeline(
         "sentiment-analysis",
         model=MODEL_NAME,
-        device_map="auto",     # CUDA si dispo, sinon CPU
+        device_map="auto",  # CUDA si dispo, sinon CPU
         truncation=True,
         max_length=cfg.model.max_length,
     )
@@ -52,7 +51,7 @@ def annotate_sentiment(
         scores.extend(round(r["score"], 4) for r in results)
 
     df = df.copy()
-    df["sentiment"]       = labels
+    df["sentiment"] = labels
     df["sentiment_score"] = scores
 
     dist = df["sentiment"].value_counts().to_dict()

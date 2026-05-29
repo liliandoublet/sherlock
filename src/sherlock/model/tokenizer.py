@@ -1,6 +1,8 @@
 from functools import lru_cache
-from transformers import AutoTokenizer
+
 from loguru import logger
+from transformers import AutoTokenizer
+
 from sherlock.config import cfg
 
 

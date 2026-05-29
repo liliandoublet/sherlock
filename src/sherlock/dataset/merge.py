@@ -1,17 +1,17 @@
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 from loguru import logger
 
 from sherlock.config import cfg
-
 
 # Colonnes obligatoires dans chaque source
 REQUIRED_COLS = ["texte", "compte", "parti", "date", "source", "media"]
 
 # Corrections de labels connus
 LABEL_FIXES = {
-    "Reconquete":  "Reconquête",
-    "Reconquête":  "Reconquête",
+    "Reconquete": "Reconquête",
+    "Reconquête": "Reconquête",
     "LFI_communiques": "LFI",
 }
 
@@ -71,6 +71,8 @@ def merge_sources(*paths: Path) -> pd.DataFrame:
 
     before = len(merged)
     merged = merged.drop_duplicates(subset=["texte"]).reset_index(drop=True)
-    logger.info(f"Après déduplication : {len(merged):,} lignes ({before - len(merged):,} doublons supprimés)")
+    logger.info(
+        f"Après déduplication : {len(merged):,} lignes ({before - len(merged):,} doublons supprimés)"
+    )
 
     return merged

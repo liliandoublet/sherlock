@@ -1,28 +1,35 @@
 import re
+
 import emoji
 
-URL_RE      = re.compile(r"https?://\S+")
-MENTION_RE  = re.compile(r"@\w{1,15}")
-HASHTAG_RE  = re.compile(r"#(\w+)")
-QUOTE_RE    = re.compile(r"[\"«»\u201c\u201d\u2018\u2019']")
-SPACES_RE   = re.compile(r"\s+")
+URL_RE = re.compile(r"https?://\S+")
+MENTION_RE = re.compile(r"@\w{1,15}")
+HASHTAG_RE = re.compile(r"#(\w+)")
+QUOTE_RE = re.compile(r"[\"«»\u201c\u201d\u2018\u2019']")
+SPACES_RE = re.compile(r"\s+")
+
 
 def remove_emojis(text: str) -> str:
     return emoji.replace_emoji(text, "")
 
+
 def remove_urls(text: str) -> str:
     return URL_RE.sub(" ", text)
+
 
 def replace_mentions(text: str, token: str = "__MENTION__") -> str:
     """Remplace @handle par un token neutre."""
     return MENTION_RE.sub(token, text)
 
+
 def remove_hashtag_symbol(text: str) -> str:
     """#politique -> politique (garde le mot, supprime le #)."""
     return HASHTAG_RE.sub(r"\1", text)
 
+
 def remove_quotes(text: str) -> str:
     return QUOTE_RE.sub(" ", text)
+
 
 def normalize_spaces(text: str) -> str:
     return SPACES_RE.sub(" ", text).strip()

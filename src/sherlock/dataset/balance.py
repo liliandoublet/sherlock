@@ -35,10 +35,12 @@ def balance(
 
     balanced = (
         df.groupby("parti", group_keys=False)
-        .apply(lambda g: g.sample(
-            n=min(len(g), per_party),
-            random_state=seed,
-        ))
+        .apply(
+            lambda g: g.sample(
+                n=min(len(g), per_party),
+                random_state=seed,
+            )
+        )
         .sample(frac=1, random_state=seed)
         .reset_index(drop=True)
     )

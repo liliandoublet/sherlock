@@ -10,13 +10,13 @@ Usage :
     sherlock dataset split --input data/interim/merged.csv
 """
 
-import typer
 from pathlib import Path
-from typing import Optional
+
+import typer
 from rich.console import Console
 from rich.table import Table
 
-from sherlock.logging import setup_logging, get_logger
+from sherlock.logging import get_logger, setup_logging
 
 # ── App principale ────────────────────────────────────────────────────────────
 app = typer.Typer(
@@ -31,15 +31,16 @@ dataset_app = typer.Typer(help="Construire et préparer le dataset.")
 app.add_typer(dataset_app, name="dataset")
 
 console = Console()
-logger  = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Callback global ───────────────────────────────────────────────────────────
 
+
 @app.callback()
 def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Mode verbeux."),
-    log_dir: str  = typer.Option("logs", "--log-dir", help="Dossier des logs."),
+    log_dir: str = typer.Option("logs", "--log-dir", help="Dossier des logs."),
 ):
     """Sherlock - détection d'idéologie politique dans les textes français."""
     level = "DEBUG" if verbose else "INFO"
@@ -47,6 +48,7 @@ def main(
 
 
 # ── Commande : info ───────────────────────────────────────────────────────────
+
 
 @app.command()
 def info():
@@ -57,27 +59,29 @@ def info():
     table.add_column("Paramètre", style="cyan")
     table.add_column("Valeur", style="green")
 
-    table.add_row("Version",    cfg.project.version)
-    table.add_row("Langue",     cfg.project.language)
-    table.add_row("Partis",     ", ".join(cfg.parties))
+    table.add_row("Version", cfg.project.version)
+    table.add_row("Langue", cfg.project.language)
+    table.add_row("Partis", ", ".join(cfg.parties))
     table.add_row("Séparateur", repr(cfg.io.separator))
-    table.add_row("Modèle ML",  cfg.model.name)
+    table.add_row("Modèle ML", cfg.model.name)
     table.add_row("Chunk size", str(cfg.cleaning.chunk_size))
-    table.add_row("Per party",  str(cfg.balance.per_party))
+    table.add_row("Per party", str(cfg.balance.per_party))
 
     console.print(table)
 
 
 # ── Commande : clean ──────────────────────────────────────────────────────────
 
+
 @app.command()
 def clean(
-    input:  Path = typer.Argument(..., help="CSV source à nettoyer."),
+    input: Path = typer.Argument(..., help="CSV source à nettoyer."),
     output: Path = typer.Argument(..., help="CSV de sortie nettoyé."),
-    source: str  = typer.Option("twitter", help="'twitter' ou 'web'."),
+    source: str = typer.Option("twitter", help="'twitter' ou 'web'."),
 ):
     """Nettoie un CSV de tweets ou de communiqués web."""
     import pandas as pd
+
     from sherlock.clean.pipeline import run as clean_pipeline
     from sherlock.config import cfg
 
@@ -97,15 +101,18 @@ def clean(
 
 # ── Commande : annotate ───────────────────────────────────────────────────────
 
+
 @app.command()
 def annotate(
-    input:      Path = typer.Argument(..., help="CSV à annoter."),
-    output:     Path = typer.Argument(..., help="CSV annoté en sortie."),
-    batch_size: int  = typer.Option(32, help="Taille des batchs."),
+    input: Path = typer.Argument(..., help="CSV à annoter."),
+    output: Path = typer.Argument(..., help="CSV annoté en sortie."),
+    batch_size: int = typer.Option(32, help="Taille des batchs."),
 ):
     """Annote sentiment et ironie sur un CSV nettoyé."""
     import pandas as pd
-    from sherlock.annotate.pipeline import annotate as run_annotate, save_annotated
+
+    from sherlock.annotate.pipeline import annotate as run_annotate
+    from sherlock.annotate.pipeline import save_annotated
     from sherlock.config import cfg
 
     if not input.exists():
@@ -122,10 +129,11 @@ def annotate(
 
 # ── Sous-commandes dataset ────────────────────────────────────────────────────
 
+
 @dataset_app.command("merge")
 def dataset_merge(
-    inputs:  list[Path] = typer.Argument(..., help="CSV sources à fusionner."),
-    output:  Path       = typer.Option(..., "--output", "-o", help="CSV de sortie."),
+    inputs: list[Path] = typer.Argument(..., help="CSV sources à fusionner."),
+    output: Path = typer.Option(..., "--output", "-o", help="CSV de sortie."),
 ):
     """Fusionne plusieurs CSV sources en un seul dataset."""
     from sherlock.dataset.merge import merge_sources
@@ -135,20 +143,22 @@ def dataset_merge(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     from sherlock.config import cfg
+
     df.to_csv(output, sep=cfg.io.separator, encoding=cfg.io.encoding, index=False)
     console.print(f"[green]Fusionné : {output} ({len(df):,} lignes)[/green]")
 
 
 @dataset_app.command("balance")
 def dataset_balance(
-    input:      Path = typer.Argument(..., help="CSV à équilibrer."),
-    output:     Path = typer.Argument(..., help="CSV équilibré en sortie."),
-    per_party:  int  = typer.Option(1392, help="Lignes max par parti."),
+    input: Path = typer.Argument(..., help="CSV à équilibrer."),
+    output: Path = typer.Argument(..., help="CSV équilibré en sortie."),
+    per_party: int = typer.Option(1392, help="Lignes max par parti."),
 ):
     """Équilibre le dataset par parti."""
     import pandas as pd
-    from sherlock.dataset.balance import balance
+
     from sherlock.config import cfg
+    from sherlock.dataset.balance import balance
 
     df = pd.read_csv(input, sep=cfg.io.separator, encoding=cfg.io.encoding)
     console.print(f"[cyan]Équilibrage à {per_party} lignes/parti...[/cyan]")
@@ -156,11 +166,13 @@ def dataset_balance(
     df_balanced.to_csv(output, sep=cfg.io.separator, encoding=cfg.io.encoding, index=False)
     console.print(f"[green]Équilibré : {output} ({len(df_balanced):,} lignes)[/green]")
 
+
 # ── Commande : train ──────────────────────────────────────────────────────────
+
 
 @app.command()
 def train(
-    data_dir:  Path = typer.Option(
+    data_dir: Path = typer.Option(
         Path("data/processed"), "--data-dir", help="Dossier des splits parquet."
     ),
     output_dir: Path = typer.Option(
@@ -170,6 +182,7 @@ def train(
 ):
     """Fine-tune CamemBERTa-v2 pour la classification de parti."""
     from sherlock.model.train import train as run_train
+
     console.print("[cyan]Démarrage de l'entraînement...[/cyan]")
     metrics = run_train(data_dir=data_dir, output_dir=output_dir, run_name=run_name)
     console.print(f"[green]Test F1 macro : {metrics['f1_macro']}[/green]")
@@ -177,6 +190,7 @@ def train(
 
 
 # ── Commande : predict ────────────────────────────────────────────────────────
+
 
 @app.command()
 def predict(
@@ -189,37 +203,35 @@ def predict(
 ):
     """Prédit le parti politique d'un texte."""
     from sherlock.model.predict import predict_text
+
     result = predict_text(text=text, model_path=model_path)
 
     table = Table(title="Prédiction", show_header=True)
     table.add_column("Parti", style="cyan")
     table.add_column("Score", style="green")
 
-    for parti, score in sorted(
-        result["all_scores"].items(), key=lambda x: x[1], reverse=True
-    ):
+    for parti, score in sorted(result["all_scores"].items(), key=lambda x: x[1], reverse=True):
         style = "bold green" if parti == result["parti"] else ""
         table.add_row(parti, f"{score:.1%}", style=style)
 
     console.print(table)
-    
+
+
 @dataset_app.command("split")
 def dataset_split(
-    input:  Path = typer.Argument(..., help="CSV à splitter."),
-    outdir: Path = typer.Option(
-        "data/processed", "--outdir", "-d", help="Dossier de sortie."
-    ),
+    input: Path = typer.Argument(..., help="CSV à splitter."),
+    outdir: Path = typer.Option("data/processed", "--outdir", "-d", help="Dossier de sortie."),
 ):
     """Crée les splits train/val/test stratifiés."""
     import pandas as pd
-    from sherlock.dataset.split import split, save_splits
+
     from sherlock.config import cfg
+    from sherlock.dataset.split import save_splits, split
 
     df = pd.read_csv(input, sep=cfg.io.separator, encoding=cfg.io.encoding)
     console.print(f"[cyan]Split stratifié de {len(df):,} lignes...[/cyan]")
     train, val, test = split(df)
     save_splits(train, val, test, outdir)
     console.print(
-        f"[green]Splits : {len(train):,} train / "
-        f"{len(val):,} val / {len(test):,} test[/green]"
+        f"[green]Splits : {len(train):,} train / {len(val):,} val / {len(test):,} test[/green]"
     )

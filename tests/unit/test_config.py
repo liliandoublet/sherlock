@@ -2,8 +2,7 @@
 Tests pour le module config.py
 """
 
-import pytest
-from sherlock.config import load_config, Config
+from sherlock.config import Config, load_config
 
 
 def test_config_loads():
@@ -35,6 +34,7 @@ def test_config_io():
 def test_config_paths_are_path_objects():
     """Les chemins sont bien des objets Path, pas des strings."""
     from pathlib import Path
+
     cfg = load_config()
     assert isinstance(cfg.paths.data_dir, Path)
     assert isinstance(cfg.paths.raw_dir, Path)

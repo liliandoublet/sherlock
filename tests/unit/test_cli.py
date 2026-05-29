@@ -1,4 +1,5 @@
 from typer.testing import CliRunner
+
 from sherlock.cli import app
 
 runner = CliRunner()
@@ -21,11 +22,14 @@ def test_cli_info():
 
 def test_cli_clean_missing_file(tmp_path):
     """clean lève une erreur si le fichier n'existe pas."""
-    result = runner.invoke(app, [
-        "clean",
-        str(tmp_path / "inexistant.csv"),
-        str(tmp_path / "output.csv"),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "clean",
+            str(tmp_path / "inexistant.csv"),
+            str(tmp_path / "output.csv"),
+        ],
+    )
     assert result.exit_code == 1
 
 

@@ -1,9 +1,9 @@
 import pandas as pd
 from loguru import logger
 
-from sherlock.config import cfg
-from sherlock.clean.regex_rules import clean_text, count_words_excluding_token
 from sherlock.clean.language import is_french
+from sherlock.clean.regex_rules import clean_text, count_words_excluding_token
+from sherlock.config import cfg
 
 
 def run(df: pd.DataFrame, source: str = "twitter") -> pd.DataFrame:
@@ -38,17 +38,11 @@ def run(df: pd.DataFrame, source: str = "twitter") -> pd.DataFrame:
 
     # 3. Nettoyage textuel
     token = cfg.cleaning.mention_token
-    df["texte"] = df["texte"].apply(
-        lambda t: clean_text(t, mention_token=token)
-    )
+    df["texte"] = df["texte"].apply(lambda t: clean_text(t, mention_token=token))
 
     # 4. Filtrer les textes trop courts
     min_words = cfg.cleaning.min_words_strict
-    df = df[
-        df["texte"].apply(
-            lambda t: count_words_excluding_token(t, token) >= min_words
-        )
-    ]
+    df = df[df["texte"].apply(lambda t: count_words_excluding_token(t, token) >= min_words)]
     logger.debug(f"Après filtre longueur (>={min_words} mots) : {len(df):,} lignes")
 
     # 5. Dédupliquer sur le texte nettoyé
@@ -56,6 +50,6 @@ def run(df: pd.DataFrame, source: str = "twitter") -> pd.DataFrame:
 
     logger.info(
         f"Nettoyage terminé : {len(df):,}/{initial:,} lignes conservées "
-        f"({len(df)/initial*100:.1f}%)"
+        f"({len(df) / initial * 100:.1f}%)"
     )
     return df

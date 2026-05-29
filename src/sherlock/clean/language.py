@@ -1,4 +1,5 @@
-from langdetect import detect, LangDetectException
+from langdetect import LangDetectException, detect
+
 
 def is_french(text: str) -> bool:
     """

@@ -8,19 +8,20 @@ Utilisation :
     print(cfg.io.separator)  # '|'
 """
 
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel
 
 # ── Sous-modèles ──────────────────────────────────────────────────────────────
+
 
 class ProjectConfig(BaseModel):
     name: str
     version: str
     language: str
+
 
 class PathsConfig(BaseModel):
     data_dir: Path
@@ -31,9 +32,11 @@ class PathsConfig(BaseModel):
     reports_dir: Path
     logs_dir: Path
 
+
 class IOConfig(BaseModel):
     separator: str
     encoding: str
+
 
 class CleaningConfig(BaseModel):
     min_words: int
@@ -41,15 +44,18 @@ class CleaningConfig(BaseModel):
     chunk_size: int
     mention_token: str
 
+
 class BalanceConfig(BaseModel):
     per_party: int
     seed: int
+
 
 class SplitConfig(BaseModel):
     train: float
     val: float
     test: float
     seed: int
+
 
 class ModelConfig(BaseModel):
     name: str
@@ -63,6 +69,7 @@ class ModelConfig(BaseModel):
 
 # ── Modèle principal ──────────────────────────────────────────────────────────
 
+
 class Config(BaseModel):
     project: ProjectConfig
     paths: PathsConfig
@@ -75,6 +82,7 @@ class Config(BaseModel):
 
 
 # ── Chargement ────────────────────────────────────────────────────────────────
+
 
 @lru_cache(maxsize=1)
 def load_config(path: str = "params.yaml") -> Config:

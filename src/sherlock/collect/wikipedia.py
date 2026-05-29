@@ -1,19 +1,17 @@
+import random
 import re
 import time
-import random
-from pathlib import Path
 
 import pandas as pd
 import requests
 
 from sherlock.collect.base import BaseScraper
 
-
 # ── Constantes ────────────────────────────────────────────────────────────────
 
-API_BASE  = "https://fr.wikipedia.org/w/api.php"
-SPACE_RE  = re.compile(r"\s+")
-UA_POOL   = [
+API_BASE = "https://fr.wikipedia.org/w/api.php"
+SPACE_RE = re.compile(r"\s+")
+UA_POOL = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
 ]
@@ -41,24 +39,28 @@ class WikipediaScraper(BaseScraper):
         return r.json()
 
     def _random_titles(self, n: int) -> list[str]:
-        data = self._api({
-            "action": "query",
-            "list": "random",
-            "rnnamespace": "0",
-            "rnlimit": min(n, 500),
-        })
+        data = self._api(
+            {
+                "action": "query",
+                "list": "random",
+                "rnnamespace": "0",
+                "rnlimit": min(n, 500),
+            }
+        )
         return [item["title"] for item in data["query"]["random"]]
 
     def _fetch_article(self, title: str) -> dict | None:
-        data = self._api({
-            "action": "query",
-            "prop": "extracts|info|revisions",
-            "titles": title,
-            "explaintext": 1,
-            "exsectionformat": "plain",
-            "rvprop": "timestamp",
-            "inprop": "url",
-        })
+        data = self._api(
+            {
+                "action": "query",
+                "prop": "extracts|info|revisions",
+                "titles": title,
+                "explaintext": 1,
+                "exsectionformat": "plain",
+                "rvprop": "timestamp",
+                "inprop": "url",
+            }
+        )
         page = next(iter(data["query"]["pages"].values()))
         if "missing" in page:
             return None
@@ -68,12 +70,12 @@ class WikipediaScraper(BaseScraper):
             return None
 
         return {
-            "texte":  text,
+            "texte": text,
             "compte": page["title"],
-            "parti":  "aucun",
-            "date":   page.get("revisions", [{}])[0].get("timestamp", ""),
+            "parti": "aucun",
+            "date": page.get("revisions", [{}])[0].get("timestamp", ""),
             "source": page.get("fullurl", ""),
-            "media":  "wikipedia",
+            "media": "wikipedia",
         }
 
     def fetch(self, n: int = 300, delay: float = 1.0) -> pd.DataFrame:

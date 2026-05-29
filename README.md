@@ -3,7 +3,7 @@
 > Détection automatique d'idéologie politique dans les textes français
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
-[![Tests](https://img.shields.io/badge/tests-47%20passing-brightgreen.svg)]()
+[![CI](https://github.com/liliandoublet/sherlock/actions/workflows/ci.yml/badge.svg)](https://github.com/liliandoublet/sherlock/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-74%25-green.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -294,18 +294,6 @@ Copier `.env.example` vers `.env` et remplir :
 | `MLFLOW_TRACKING_URI` | Non | URI MLflow (défaut : `file:./mlruns`) |
 | `HF_TOKEN` | Non | Token HuggingFace pour upload de modèles |
 
----
-
-## Roadmap
-
-- [ ] Entraînement sur le corpus complet et publication des métriques
-- [ ] Baseline zero-shot LLM (Claude + Gemini)
-- [ ] Démo interactive HuggingFace Spaces
-- [ ] CI GitHub Actions (ruff + pytest)
-- [ ] DVC pour le versioning des données
-- [ ] Support Bluesky en remplacement de Twitter
-
----
 
 ## Auteur
 
