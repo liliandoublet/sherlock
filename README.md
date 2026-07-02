@@ -238,8 +238,8 @@ sherlock/
 
 | Modèle | Accuracy | F1 macro | F1 weighted |
 |---|---|---|---|
-| CamemBERTa-v2 fine-tuné | *à compléter* | *à compléter* | *à compléter* |
-| Baseline zero-shot LLM | *à compléter* | *à compléter* | *à compléter* |
+| CamemBERTa-v2 fine-tuné | *NAN* | *NAN* | *NAN* |
+| Baseline zero-shot LLM | *NAN* | *NAN* | *NAN* |
 
 ---
 
