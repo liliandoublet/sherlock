@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Réutilisé par release.yml : aucune release sans CI verte
+  workflow_call:
 
 jobs:
   test:
@@ -13,26 +15,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv + Python 3.12
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
+          enable-cache: true
 
-      - name: Install dependencies
+      - name: Install dependencies (torch CPU)
+        # torch CPU évite ~3 Go de CUDA inutiles en CI ; les tests modèle tournent vraiment
         run: |
-          uv sync --extra data --extra scraping --extra llm --extra dev
-          uv pip install tqdm scikit-learn
+          uv sync --locked --extra data --extra scraping --extra llm --extra viz --extra dev
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install "transformers>=4.46" "mlflow>=2.17" "sentencepiece>=0.2" "protobuf>=5.28" "accelerate>=1.0" "datasets>=3.0"
 
       - name: Lint with ruff
-        run: uv run ruff check src/ tests/
+        run: |
+          uv run --no-sync ruff check src tests app
+          uv run --no-sync ruff format --check src tests app
 
       - name: Run tests
-        run: uv run pytest tests/ -v --tb=short
+        run: uv run --no-sync pytest tests/ --tb=short
         env:
           GEMINI_API_KEY: "dummy-key-for-tests"
           ANTHROPIC_API_KEY: "dummy-key-for-tests"

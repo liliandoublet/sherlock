@@ -1,48 +1,41 @@
+"""
+train.py
+--------
+Fine-tuning de CamemBERT pour la classification de parti, suivi dans MLflow.
+
+Chaque run logge : hyperparamètres, commit git, loss/F1 par epoch (train et val),
+métriques finales sur test (globales et par média), rapport de classification,
+matrice de confusion et params.yaml.
+"""
+
+import random
 import time
 from pathlib import Path
 
 import mlflow
-import mlflow.pytorch
+import numpy as np
 import pandas as pd
 import torch
-import torch.nn as nn
 from loguru import logger
-from sklearn.metrics import accuracy_score, f1_score
-from sklearn.preprocessing import LabelEncoder
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-from transformers import get_linear_schedule_with_warmup
+from transformers import DataCollatorWithPadding, get_linear_schedule_with_warmup
 
 from sherlock.config import cfg
-from sherlock.model.classifier import PartyClassifier
+from sherlock.model.classifier import build_model, label_maps, load_model
+from sherlock.model.evaluate import evaluate_dataframe, get_device, log_result_to_mlflow
+from sherlock.model.features import build_inputs
 from sherlock.model.tokenizer import get_tokenizer
+from sherlock.tracking import git_commit, setup_mlflow
 
-# ── Dataset PyTorch ───────────────────────────────────────────────────────────
-
-
-class PartyDataset(Dataset):
-    def __init__(self, texts: list[str], labels: list[int], tokenizer):
-        self.encodings = tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=cfg.model.max_length,
-            return_tensors="pt",
-        )
-        self.labels = torch.tensor(labels, dtype=torch.long)
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, idx):
-        return {
-            "input_ids": self.encodings["input_ids"][idx],
-            "attention_mask": self.encodings["attention_mask"][idx],
-            "labels": self.labels[idx],
-        }
+# ── Utilitaires ───────────────────────────────────────────────────────────────
 
 
-# ── Fonctions utilitaires ─────────────────────────────────────────────────────
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def load_splits(data_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -54,33 +47,18 @@ def load_splits(data_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
     return train, val, test
 
 
-def evaluate(model, loader, device) -> dict:
-    """Évalue le modèle sur un DataLoader."""
-    model.eval()
-    all_preds, all_labels = [], []
-    total_loss = 0.0
-    criterion = nn.CrossEntropyLoss()
-
-    with torch.no_grad():
-        for batch in loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
-
-            logits = model(input_ids, attention_mask)
-            loss = criterion(logits, labels)
-            total_loss += loss.item()
-
-            preds = logits.argmax(dim=-1).cpu().tolist()
-            all_preds.extend(preds)
-            all_labels.extend(labels.cpu().tolist())
-
-    return {
-        "loss": round(total_loss / len(loader), 4),
-        "accuracy": round(accuracy_score(all_labels, all_preds), 4),
-        "f1_macro": round(f1_score(all_labels, all_preds, average="macro"), 4),
-        "f1_weighted": round(f1_score(all_labels, all_preds, average="weighted"), 4),
-    }
+def encode(df: pd.DataFrame, tokenizer, label2id: dict[str, int], use_meta: bool) -> list[dict]:
+    """Tokenise sans padding (le padding est fait par batch par le collator)."""
+    enc = tokenizer(
+        build_inputs(df, use_meta),
+        truncation=True,
+        max_length=cfg.model.max_length,
+    )
+    labels = df["parti"].map(label2id).tolist()
+    return [
+        {"input_ids": ids, "attention_mask": mask, "labels": label}
+        for ids, mask, label in zip(enc["input_ids"], enc["attention_mask"], labels, strict=True)
+    ]
 
 
 # ── Boucle d'entraînement principale ─────────────────────────────────────────
@@ -90,156 +68,147 @@ def train(
     data_dir: Path = Path(cfg.paths.processed_dir),
     output_dir: Path = Path(cfg.paths.models_dir) / "camembert_party",
     run_name: str = "camembert_party",
-):
+    use_meta: bool | None = None,
+    epochs: int | None = None,
+) -> dict:
     """
-    Fine-tune CamemBERTa-v2 pour la classification de parti.
-    Toutes les métriques sont loggées dans MLflow.
+    Fine-tune CamemBERT et retourne les métriques test.
+    Le meilleur modèle (F1 macro sur val) est sauvegardé dans output_dir.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Device : {device}")
+    use_meta = cfg.model.use_meta if use_meta is None else use_meta
+    epochs = epochs or cfg.model.epochs
+    set_seed(cfg.model.seed)
+    device = get_device()
+    use_amp = cfg.model.fp16 and device.type == "cuda"
+    logger.info(f"Device : {device} | fp16={use_amp} | use_meta={use_meta}")
 
-    # ── Chargement des données ────────────────────────────────────────────────
+    # ── Données ───────────────────────────────────────────────────────────────
     train_df, val_df, test_df = load_splits(data_dir)
+    _, label2id = label_maps(cfg.parties)
 
-    # Encodage des labels
-    le = LabelEncoder()
-    le.fit(cfg.parties)
-    train_labels = le.transform(train_df["parti"].tolist())
-    val_labels = le.transform(val_df["parti"].tolist())
-    test_labels = le.transform(test_df["parti"].tolist())
-    n_classes = len(le.classes_)
-    logger.info(f"Classes : {list(le.classes_)}")
-
-    # ── Tokenisation ──────────────────────────────────────────────────────────
     tokenizer = get_tokenizer()
-    train_ds = PartyDataset(train_df["texte"].tolist(), train_labels.tolist(), tokenizer)
-    val_ds = PartyDataset(val_df["texte"].tolist(), val_labels.tolist(), tokenizer)
-    test_ds = PartyDataset(test_df["texte"].tolist(), test_labels.tolist(), tokenizer)
-
-    train_loader = DataLoader(train_ds, batch_size=cfg.model.batch_size, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=cfg.model.batch_size)
-    test_loader = DataLoader(test_ds, batch_size=cfg.model.batch_size)
+    collator = DataCollatorWithPadding(tokenizer=tokenizer)
+    train_loader = DataLoader(
+        encode(train_df, tokenizer, label2id, use_meta),
+        batch_size=cfg.model.batch_size,
+        shuffle=True,
+        collate_fn=collator,
+        generator=torch.Generator().manual_seed(cfg.model.seed),
+    )
 
     # ── Modèle ────────────────────────────────────────────────────────────────
-    model = PartyClassifier(n_classes=n_classes).to(device)
-    criterion = nn.CrossEntropyLoss()
+    model = build_model(cfg.parties).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=cfg.model.learning_rate,
-        weight_decay=0.01,
+        weight_decay=cfg.model.weight_decay,
     )
-    total_steps = len(train_loader) * cfg.model.epochs
+    total_steps = len(train_loader) * epochs
     scheduler = get_linear_schedule_with_warmup(
         optimizer,
         num_warmup_steps=int(total_steps * cfg.model.warmup_ratio),
         num_training_steps=total_steps,
     )
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
     # ── MLflow run ────────────────────────────────────────────────────────────
-    mlflow.set_experiment("sherlock-party-classification")
+    setup_mlflow()
+    artifact_dir = Path(cfg.paths.reports_dir) / "metrics" / run_name
 
-    with mlflow.start_run(run_name=run_name):
-        # Log hyperparamètres
+    with mlflow.start_run(run_name=run_name) as run:
+        mlflow.set_tags({"git_commit": git_commit(), "stage": "training"})
         mlflow.log_params(
             {
                 "model": cfg.model.name,
-                "epochs": cfg.model.epochs,
+                "use_meta": use_meta,
+                "epochs": epochs,
                 "batch_size": cfg.model.batch_size,
                 "learning_rate": cfg.model.learning_rate,
-                "max_length": cfg.model.max_length,
+                "weight_decay": cfg.model.weight_decay,
                 "warmup_ratio": cfg.model.warmup_ratio,
-                "n_classes": n_classes,
-                "train_size": len(train_ds),
-                "val_size": len(val_ds),
+                "max_length": cfg.model.max_length,
+                "seed": cfg.model.seed,
+                "fp16": use_amp,
+                "train_size": len(train_df),
+                "val_size": len(val_df),
+                "test_size": len(test_df),
                 "device": str(device),
             }
         )
+        mlflow.log_artifact("params.yaml")
 
-        best_val_f1 = 0.0
+        best_val_f1 = -1.0
         patience_count = 0
+        step = 0
 
-        # ── Boucle epochs ─────────────────────────────────────────────────────
-        for epoch in range(1, cfg.model.epochs + 1):
+        for epoch in range(1, epochs + 1):
             model.train()
             train_loss = 0.0
             start = time.time()
 
-            for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{cfg.model.epochs}"):
-                optimizer.zero_grad()
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
-
-                logits = model(input_ids, attention_mask)
-                loss = criterion(logits, labels)
-                loss.backward()
-
+            for batch in tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}"):
+                batch = {k: v.to(device) for k, v in batch.items()}
+                optimizer.zero_grad(set_to_none=True)
+                with torch.autocast(device_type=device.type, enabled=use_amp):
+                    loss = model(**batch).loss
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
+
                 train_loss += loss.item()
+                step += 1
+                if step % 50 == 0:
+                    mlflow.log_metric("train_loss_step", loss.item(), step=step)
 
-            # Métriques epoch
-            avg_train_loss = round(train_loss / len(train_loader), 4)
-            val_metrics = evaluate(model, val_loader, device)
-            elapsed = round(time.time() - start, 1)
-
+            val = evaluate_dataframe(model, tokenizer, val_df, use_meta)["overall"]
+            avg_train_loss = train_loss / len(train_loader)
+            elapsed = time.time() - start
             logger.info(
-                f"Epoch {epoch} | train_loss={avg_train_loss} | "
-                f"val_loss={val_metrics['loss']} | "
-                f"val_acc={val_metrics['accuracy']} | "
-                f"val_f1={val_metrics['f1_macro']} | "
-                f"{elapsed}s"
+                f"Epoch {epoch} | train_loss={avg_train_loss:.4f} | "
+                f"val_acc={val['accuracy']:.4f} | val_f1={val['f1_macro']:.4f} | {elapsed:.0f}s"
             )
-
-            # Log MLflow
             mlflow.log_metrics(
                 {
                     "train_loss": avg_train_loss,
-                    "val_loss": val_metrics["loss"],
-                    "val_accuracy": val_metrics["accuracy"],
-                    "val_f1_macro": val_metrics["f1_macro"],
-                    "val_f1_weighted": val_metrics["f1_weighted"],
+                    "val_accuracy": val["accuracy"],
+                    "val_f1_macro": val["f1_macro"],
+                    "val_f1_weighted": val["f1_weighted"],
+                    "epoch_seconds": elapsed,
                 },
                 step=epoch,
             )
 
-            # Early stopping + sauvegarde meilleur modèle
-            if val_metrics["f1_macro"] > best_val_f1:
-                best_val_f1 = val_metrics["f1_macro"]
+            # Early stopping + sauvegarde du meilleur modèle (F1 macro val)
+            if val["f1_macro"] > best_val_f1:
+                best_val_f1 = val["f1_macro"]
                 patience_count = 0
                 output_dir.mkdir(parents=True, exist_ok=True)
-                torch.save(model.state_dict(), output_dir / "best_model.pt")
-                logger.info(f"Meilleur modèle sauvegardé (f1={best_val_f1})")
+                model.save_pretrained(output_dir)
+                tokenizer.save_pretrained(output_dir)
+                mlflow.log_metric("best_epoch", epoch)
+                logger.info(f"Meilleur modèle sauvegardé (val f1={best_val_f1:.4f})")
             else:
                 patience_count += 1
                 if patience_count >= cfg.model.early_stopping_patience:
                     logger.info(f"Early stopping à l'epoch {epoch}")
                     break
 
-        # ── Évaluation finale sur test ─────────────────────────────────────────
+        # ── Évaluation finale sur test avec le meilleur modèle ───────────────
         logger.info("Évaluation finale sur test set...")
-        model.load_state_dict(torch.load(output_dir / "best_model.pt"))
-        test_metrics = evaluate(model, test_loader, device)
+        del model
+        torch.cuda.empty_cache()
+        best_model, _ = load_model(output_dir)
+        best_model.to(device)
 
-        mlflow.log_metrics(
-            {
-                "test_loss": test_metrics["loss"],
-                "test_accuracy": test_metrics["accuracy"],
-                "test_f1_macro": test_metrics["f1_macro"],
-                "test_f1_weighted": test_metrics["f1_weighted"],
-            }
-        )
+        test_result = evaluate_dataframe(best_model, tokenizer, test_df, use_meta)
+        test_result["run_id"] = run.info.run_id
+        test_result["model_dir"] = str(output_dir)
+        test_result["use_meta"] = use_meta
+        mlflow.log_metric("best_val_f1_macro", best_val_f1)
+        log_result_to_mlflow(test_result, "test", artifact_dir)
+        mlflow.set_tag("model_dir", str(output_dir))
 
-        logger.info(
-            f"Test final : acc={test_metrics['accuracy']} | f1_macro={test_metrics['f1_macro']}"
-        )
-
-        # Log modèle dans MLflow
-        mlflow.pytorch.log_model(model, "model")
-        mlflow.log_dict(
-            {str(i): label for i, label in enumerate(le.classes_)},
-            "label_mapping.json",
-        )
-
-    return test_metrics
+    return test_result["overall"]

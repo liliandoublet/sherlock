@@ -1,38 +1,47 @@
-import torch.nn as nn
+"""
+classifier.py
+-------------
+CamemBERT avec tête de classification (8 partis).
+
+On utilise AutoModelForSequenceClassification : même format de sauvegarde
+que les modèles historiques (save_pretrained), donc un seul chemin de code
+pour évaluer/servir l'ancien V6 et les nouveaux runs.
+"""
+
+from pathlib import Path
+
 from loguru import logger
-from transformers import AutoModel
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from sherlock.config import cfg
 
 
-class PartyClassifier(nn.Module):
-    """
-    CamemBERTa-v2 fine-tuné pour la classification de parti politique.
+def label_maps(parties: list[str]) -> tuple[dict[int, str], dict[str, int]]:
+    """id2label / label2id triés (même ordre que sklearn.LabelEncoder)."""
+    labels = sorted(parties)
+    return dict(enumerate(labels)), {label: i for i, label in enumerate(labels)}
 
-    Architecture :
-        CamemBERTa-v2 (frozen ou trainable)
-        -> pooling [CLS]
-        -> dropout
-        -> linear(hidden_size, n_classes)
-    """
 
-    def __init__(self, n_classes: int, dropout: float = 0.1):
-        super().__init__()
-        self.n_classes = n_classes
-        self.encoder = AutoModel.from_pretrained(cfg.model.name)
-        hidden_size = self.encoder.config.hidden_size
+def build_model(parties: list[str] | None = None, model_name: str | None = None):
+    """Instancie CamemBERT pré-entraîné avec une tête de classification neuve."""
+    parties = parties or cfg.parties
+    model_name = model_name or cfg.model.name
+    id2label, label2id = label_maps(parties)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=len(id2label),
+        id2label=id2label,
+        label2id=label2id,
+    )
+    logger.info(f"Modèle initialisé : {model_name} -> {len(id2label)} classes")
+    return model
 
-        self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(hidden_size, n_classes)
 
-        logger.info(
-            f"PartyClassifier initialisé : {cfg.model.name} "
-            f"-> {n_classes} classes, hidden_size={hidden_size}"
-        )
-
-    def forward(self, input_ids, attention_mask, **kwargs):
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        cls_output = outputs.last_hidden_state[:, 0, :]  # token [CLS]
-        dropped = self.dropout(cls_output)
-        logits = self.classifier(dropped)
-        return logits
+def load_model(model_dir: Path):
+    """Charge un modèle fine-tuné et son tokenizer depuis un dossier save_pretrained."""
+    if not (model_dir / "config.json").exists():
+        raise FileNotFoundError(f"Pas de config.json dans {model_dir}")
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+    logger.info(f"Modèle chargé : {model_dir}")
+    return model, tokenizer

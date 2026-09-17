@@ -5,80 +5,137 @@ On mocke les modèles HuggingFace pour ne pas télécharger de poids.
 
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
 torch = pytest.importorskip("torch")
 
-
-def test_party_classifier_forward():
-    """PartyClassifier produit le bon nombre de logits."""
-    mock_encoder = MagicMock()
-    mock_output = MagicMock()
-    mock_output.last_hidden_state = torch.zeros(2, 10, 768)
-    mock_encoder.return_value = mock_output
-    mock_encoder.config.hidden_size = 768
-
-    with patch("sherlock.model.classifier.AutoModel.from_pretrained", return_value=mock_encoder):
-        from importlib import reload
-
-        import sherlock.model.classifier as clf_module
-
-        reload(clf_module)
-        model = clf_module.PartyClassifier(n_classes=8)
-        ids = torch.zeros(2, 10, dtype=torch.long)
-        mask = torch.ones(2, 10, dtype=torch.long)
-        logits = model(ids, mask)
-
-    assert logits.shape == (2, 8)
+PARTIES = ["EELV", "LFI", "LR", "PCF", "PS", "Reconquête", "Renaissance", "RN"]
 
 
-def test_party_classifier_n_classes():
-    """PartyClassifier accepte n'importe quel nombre de classes."""
-    mock_encoder = MagicMock()
-    mock_output = MagicMock()
-    mock_output.last_hidden_state = torch.zeros(1, 5, 512)
-    mock_encoder.return_value = mock_output
-    mock_encoder.config.hidden_size = 512
+class FakeModel(torch.nn.Module):
+    """Modèle minimal : renvoie des logits favorisant une classe fixe."""
 
-    with patch("sherlock.model.classifier.AutoModel.from_pretrained", return_value=mock_encoder):
-        from importlib import reload
+    def __init__(self, n_classes: int = 8, winner: int = 0):
+        super().__init__()
+        self.dummy = torch.nn.Parameter(torch.zeros(1))
+        self.winner = winner
+        labels = sorted(PARTIES)[:n_classes]
+        self.config = MagicMock(num_labels=n_classes, id2label=dict(enumerate(labels)))
 
-        import sherlock.model.classifier as clf_module
-
-        reload(clf_module)
-        model = clf_module.PartyClassifier(n_classes=3)
-        assert model.n_classes == 3
+    def forward(self, input_ids, attention_mask, **kwargs):
+        logits = torch.zeros(input_ids.shape[0], self.config.num_labels)
+        logits[:, self.winner] = 5.0
+        return MagicMock(logits=logits)
 
 
-def test_predict_text_output_structure():
-    """predict_text retourne un dict avec les bonnes clés."""
-    # On mocke tout ce qui touche au modèle et aux poids
-    mock_tokenizer = MagicMock()
-    mock_tokenizer.return_value = {
-        "input_ids": torch.zeros(1, 10, dtype=torch.long),
-        "attention_mask": torch.ones(1, 10, dtype=torch.long),
+def fake_tokenizer(texts, **kwargs):
+    n = len(texts)
+    enc = {
+        "input_ids": torch.zeros(n, 4, dtype=torch.long),
+        "attention_mask": torch.ones(n, 4, dtype=torch.long),
     }
+    batch = MagicMock()
+    batch.to.return_value = enc
+    return batch
 
-    # Instance mockée qui retourne un vrai tensor
-    mock_instance = MagicMock(spec=["eval", "load_state_dict", "to", "__call__"])
-    mock_instance.to.return_value = mock_instance
-    mock_instance.return_value = torch.randn(1, 8)
-    mock_instance.load_state_dict = MagicMock(return_value=None)
 
-    with (
-        patch("sherlock.model.predict.get_tokenizer", return_value=mock_tokenizer),
-        patch("sherlock.model.predict.PartyClassifier", return_value=mock_instance),
-        patch("sherlock.model.predict.torch.load", return_value={}),
-        patch("torch.nn.Module.load_state_dict", return_value=None),
+# ── features ──────────────────────────────────────────────────────────────────
+
+
+def test_meta_prefix_matches_legacy_format():
+    """Le préfixe reproduit le format du modèle historique V6."""
+    from sherlock.model.features import meta_prefix
+
+    assert meta_prefix("négatif", False) == "[NOIRONY] [SENT_négatif] "
+    assert meta_prefix(" Positif ", True) == "[IRONY] [SENT_positif] "
+
+
+def test_build_inputs_with_and_without_meta():
+    from sherlock.model.features import build_inputs
+
+    df = pd.DataFrame({"texte": ["abc"], "sentiment": ["neutre"], "ironie": [True]})
+    assert build_inputs(df, use_meta=False) == ["abc"]
+    assert build_inputs(df, use_meta=True) == ["[IRONY] [SENT_neutre] abc"]
+
+
+# ── classifier ────────────────────────────────────────────────────────────────
+
+
+def test_label_maps_sorted_like_label_encoder():
+    """Même ordre que sklearn.LabelEncoder utilisé par les modèles historiques."""
+    from sherlock.model.classifier import label_maps
+
+    id2label, label2id = label_maps(PARTIES)
+    assert id2label[0] == "EELV"
+    assert id2label[7] == "Renaissance"
+    assert all(label2id[label] == i for i, label in id2label.items())
+
+
+def test_build_model_passes_label_maps():
+    import sherlock.model.classifier as clf
+
+    with patch.object(clf.AutoModelForSequenceClassification, "from_pretrained") as mock_load:
+        clf.build_model(PARTIES, model_name="fake")
+
+    kwargs = mock_load.call_args.kwargs
+    assert kwargs["num_labels"] == 8
+    assert kwargs["label2id"]["RN"] == 5
+
+
+def test_load_model_requires_config(tmp_path):
+    from sherlock.model.classifier import load_model
+
+    with pytest.raises(FileNotFoundError):
+        load_model(tmp_path)
+
+
+# ── evaluate ──────────────────────────────────────────────────────────────────
+
+
+def test_predict_proba_keeps_input_order():
+    """Le tri par longueur ne doit pas mélanger les prédictions."""
+    from sherlock.model.evaluate import predict_proba
+
+    probs = predict_proba(FakeModel(winner=2), fake_tokenizer, ["long texte", "a", "moyen"])
+    assert probs.shape == (3, 8)
+    assert (probs.argmax(axis=1) == 2).all()
+    assert probs.sum(axis=1) == pytest.approx([1.0, 1.0, 1.0])
+
+
+def test_evaluate_dataframe_metrics_and_media():
+    from sherlock.model.evaluate import evaluate_dataframe
+
+    df = pd.DataFrame(
+        {
+            "texte": ["a", "b", "c", "d"],
+            "parti": ["EELV", "EELV", "LFI", "LFI"],
+            "media": ["Twitter", "site_web", "Twitter", "site_web"],
+            "sentiment": ["neutre"] * 4,
+            "ironie": [False] * 4,
+        }
+    )
+    result = evaluate_dataframe(FakeModel(winner=0), fake_tokenizer, df, use_meta=True)
+
+    assert result["n"] == 4
+    assert result["overall"]["accuracy"] == 0.5
+    assert set(result["by_media"]) == {"Twitter", "site_web"}
+    assert len(result["confusion_matrix"]) == 8
+
+
+# ── predict ───────────────────────────────────────────────────────────────────
+
+
+def test_predictor_output_structure():
+    import sherlock.model.predict as predict_module
+
+    with patch.object(
+        predict_module, "load_model", return_value=(FakeModel(winner=5), fake_tokenizer)
     ):
-        from importlib import reload
+        predictor = predict_module.Predictor(model_dir=MagicMock())
+        results = predictor.predict(["texte"], ["positif"], [False])
 
-        import sherlock.model.predict as predict_module
-
-        reload(predict_module)
-        result = predict_module.predict_text("test text", model_path=MagicMock())
-
-    assert "parti" in result
-    assert "confidence" in result
-    assert "all_scores" in result
-    assert isinstance(result["all_scores"], dict)
+    assert len(results) == 1
+    assert results[0]["parti"] == "RN"
+    assert set(results[0]["all_scores"]) == set(PARTIES)
+    assert 0 < results[0]["confidence"] <= 1

@@ -62,9 +62,22 @@ class ModelConfig(BaseModel):
     max_length: int
     batch_size: int
     learning_rate: float
+    weight_decay: float = 0.0
     epochs: int
     warmup_ratio: float
     early_stopping_patience: int
+    seed: int = 92
+    fp16: bool = True
+    use_meta: bool = True
+
+
+class LegacyConfig(BaseModel):
+    splits_dir: Path
+
+
+class MLflowConfig(BaseModel):
+    experiment: str
+    tracking_uri: str
 
 
 # ── Modèle principal ──────────────────────────────────────────────────────────
@@ -79,6 +92,8 @@ class Config(BaseModel):
     balance: BalanceConfig
     split: SplitConfig
     model: ModelConfig
+    legacy: LegacyConfig
+    mlflow: MLflowConfig
 
 
 # ── Chargement ────────────────────────────────────────────────────────────────

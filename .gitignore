@@ -1,4 +1,3 @@
-.gitignore << 'EOF'
 # Python
 __pycache__/
 *.py[cod]
@@ -31,7 +30,7 @@ accounts.db
 *.pem
 credentials.json
 
-# Data & models (versionnés par DVC plus tard)
+# Data & models (trop lourds pour git ; les métriques, elles, sont versionnées dans reports/)
 data/raw/
 data/interim/
 data/processed/
@@ -47,8 +46,9 @@ models/
 logs/
 *.log
 
-# ML tracking
+# ML tracking (mlflow.db est couvert par *.db)
 mlruns/
+mlartifacts/
 wandb/
 
 # Cache
@@ -62,5 +62,7 @@ htmlcov/
 Thumbs.db
 desktop.ini
 
-# Ancien projet (à migrer progressivement, retiré du repo à la fin)
+# Ancien projet et copie brute de ses artefacts (~50 Go, checkpoints inclus)
 GraduateProject/
+DataGP/
+experiments/

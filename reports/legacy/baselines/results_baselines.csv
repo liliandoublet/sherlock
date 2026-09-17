@@ -1,0 +1,5 @@
+model,f1_macro
+camembert_ftV6,0.6127044636230515
+camembert_ablation,0.5847775827881352
+fasttext,0.5701059232610395
+tfidf_logreg,0.56950959598949

@@ -1,6 +1,6 @@
 project:
   name: "sherlock"
-  version: "0.1.0"
+  version: "0.2.0"
   language: "fr"
 
 paths:
@@ -43,10 +43,24 @@ split:
   seed: 42
 
 model:
-  name: "almanach/camembertav2-base"
+  # Mêmes hyperparamètres que le run historique V6 (F1 macro 0,629 sur test)
+  name: "almanach/camembert-base"
   max_length: 512
-  batch_size: 32
+  batch_size: 16
   learning_rate: 2.0e-5
-  epochs: 5
-  warmup_ratio: 0.1
+  weight_decay: 0.0
+  epochs: 4
+  warmup_ratio: 0.0
   early_stopping_patience: 2
+  seed: 92
+  fp16: true
+  # Préfixe "[NOIRONY] [SENT_négatif] texte..." (sentiment + ironie en entrée)
+  use_meta: true
+
+legacy:
+  # Splits du projet de fin d'études (source de vérité, jamais modifiés)
+  splits_dir: "data/raw/legacy"
+
+mlflow:
+  experiment: "sherlock-party-classification"
+  tracking_uri: "sqlite:///mlflow.db"

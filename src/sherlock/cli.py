@@ -8,6 +8,9 @@ Usage :
     sherlock annotate --input data/interim/merged.csv
     sherlock dataset merge --inputs data/interim/twitter.csv data/interim/web.csv
     sherlock dataset split --input data/interim/merged.csv
+    sherlock dataset import-legacy data/raw/legacy
+    sherlock train --run-name camembert_meta
+    sherlock evaluate models/camembert_party
 """
 
 from pathlib import Path
@@ -179,14 +182,64 @@ def train(
         Path("models/camembert_party"), "--output-dir", help="Dossier de sortie du modèle."
     ),
     run_name: str = typer.Option("camembert_party", "--run-name", help="Nom du run MLflow."),
+    meta: bool = typer.Option(
+        True,
+        "--meta/--no-meta",
+        help="Préfixer sentiment + ironie au texte (ablation : --no-meta).",
+    ),
+    epochs: int | None = typer.Option(None, "--epochs", help="Surcharge params.yaml."),
 ):
-    """Fine-tune CamemBERTa-v2 pour la classification de parti."""
+    """Fine-tune CamemBERT pour la classification de parti (suivi MLflow)."""
     from sherlock.model.train import train as run_train
 
     console.print("[cyan]Démarrage de l'entraînement...[/cyan]")
-    metrics = run_train(data_dir=data_dir, output_dir=output_dir, run_name=run_name)
-    console.print(f"[green]Test F1 macro : {metrics['f1_macro']}[/green]")
-    console.print("[dim]Visualiser les runs : mlflow ui[/dim]")
+    metrics = run_train(
+        data_dir=data_dir, output_dir=output_dir, run_name=run_name, use_meta=meta, epochs=epochs
+    )
+    console.print(
+        f"[green]Test : F1 macro = {metrics['f1_macro']:.4f} | "
+        f"accuracy = {metrics['accuracy']:.4f}[/green]"
+    )
+    console.print("[dim]Visualiser les runs : make mlflow[/dim]")
+
+
+# ── Commande : evaluate ───────────────────────────────────────────────────────
+
+
+@app.command()
+def evaluate(
+    model_dir: Path = typer.Argument(..., help="Dossier du modèle (format save_pretrained)."),
+    data_dir: Path = typer.Option(Path("data/processed"), "--data-dir"),
+    split: str = typer.Option("test", "--split", help="train, val ou test."),
+    run_name: str | None = typer.Option(None, "--run-name", help="Nom du run MLflow."),
+    meta: bool = typer.Option(True, "--meta/--no-meta"),
+):
+    """Ré-évalue un modèle sauvegardé et logge le résultat dans MLflow."""
+    from sherlock.model.evaluate import evaluate_model_dir
+
+    metrics = evaluate_model_dir(
+        model_dir, data_dir=data_dir, split=split, use_meta=meta, run_name=run_name
+    )
+    table = Table(title=f"Évaluation {split}", show_header=True)
+    table.add_column("Métrique", style="cyan")
+    table.add_column("Valeur", style="green")
+    for name, value in metrics.items():
+        table.add_row(name, f"{value:.4f}")
+    console.print(table)
+
+
+# ── Commande : baselines ──────────────────────────────────────────────────────
+
+
+@app.command()
+def baselines(
+    data_dir: Path = typer.Option(Path("data/processed"), "--data-dir"),
+):
+    """Entraîne la baseline TF-IDF + LogReg sur les mêmes splits (suivi MLflow)."""
+    from sherlock.model.baselines import train_tfidf_logreg
+
+    metrics = train_tfidf_logreg(data_dir=data_dir)
+    console.print(f"[green]TF-IDF + LogReg : F1 macro = {metrics['f1_macro']:.4f}[/green]")
 
 
 # ── Commande : predict ────────────────────────────────────────────────────────
@@ -195,16 +248,16 @@ def train(
 @app.command()
 def predict(
     text: str = typer.Argument(..., help="Texte à classifier."),
-    model_path: Path = typer.Option(
-        Path("models/camembert_party/best_model.pt"),
-        "--model-path",
-        help="Chemin vers le modèle sauvegardé.",
+    model_dir: Path = typer.Option(
+        Path("models/camembert_party"), "--model-dir", help="Dossier du modèle."
     ),
+    sentiment: str = typer.Option("neutre", help="positif, neutre ou négatif."),
+    irony: bool = typer.Option(False, "--irony/--no-irony"),
 ):
     """Prédit le parti politique d'un texte."""
     from sherlock.model.predict import predict_text
 
-    result = predict_text(text=text, model_path=model_path)
+    result = predict_text(text=text, model_dir=model_dir, sentiment=sentiment, irony=irony)
 
     table = Table(title="Prédiction", show_header=True)
     table.add_column("Parti", style="cyan")
@@ -215,6 +268,41 @@ def predict(
         table.add_row(parti, f"{score:.1%}", style=style)
 
     console.print(table)
+
+
+# ── Commande : report ─────────────────────────────────────────────────────────
+
+
+@app.command()
+def report(
+    readme: Path = typer.Option(Path("README.md"), "--readme"),
+    reports_dir: Path = typer.Option(Path("reports"), "--reports-dir"),
+):
+    """Régénère le tableau de résultats du README depuis reports/."""
+    from sherlock.report import update_readme
+
+    update_readme(readme, reports_dir)
+    console.print(f"[green]Tableau de résultats mis à jour dans {readme}[/green]")
+
+
+@dataset_app.command("import-legacy")
+def dataset_import_legacy(
+    src_dir: Path = typer.Argument(
+        Path("data/raw/legacy"), help="Dossier contenant train.csv, val.csv, test.csv."
+    ),
+    outdir: Path = typer.Option("data/processed", "--outdir", "-d", help="Dossier de sortie."),
+):
+    """Importe les splits historiques (CSV) en parquet validé, sans les re-découper."""
+    from sherlock.dataset.legacy import import_legacy
+
+    stats = import_legacy(src_dir, outdir)
+    console.print(
+        f"[green]Splits : {stats['train']:,} train / {stats['val']:,} val / "
+        f"{stats['test']:,} test -> {outdir}[/green]"
+    )
+    overlaps = {k: v for k, v in stats.items() if k.startswith("overlap_") and v}
+    if overlaps:
+        console.print(f"[yellow]Textes partagés entre splits : {overlaps}[/yellow]")
 
 
 @dataset_app.command("split")

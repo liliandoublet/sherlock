@@ -5,21 +5,24 @@ Chaque décision explique le contexte, les options considérées, et le choix fi
 
 ---
 
-## 001 - CamemBERTa-v2 plutôt que CamemBERT-base
+## 001 - CamemBERT-base (révisée)
 
 **Contexte** : choix du modèle de base pour le fine-tuning.
 
 **Options considérées** :
-- CamemBERT-base (2019) : architecture BERT, 110M paramètres
-- CamemBERTa-v2 (2023) : architecture DeBERTa, corpus plus large
+- CamemBERT-base (2019) : architecture RoBERTa, 110M paramètres
+- CamemBERTa-v2 (2024) : architecture DeBERTa-v3, corpus plus large et plus récent
 - XLM-RoBERTa-large : multilingue, plus généraliste
 
-**Décision** : CamemBERTa-v2.
+**Décision initiale** : CamemBERTa-v2 (jamais entraîné).
 
-**Raisons** : architecture DeBERTa supérieure à BERT sur les tâches de
-classification fine-grained. Corpus d'entraînement plus récent et plus large
-que CamemBERT-base. Préféré à XLM-RoBERTa car monolingue français,
-plus adapté à notre corpus politique.
+**Décision révisée** : CamemBERT-base (`almanach/camembert-base`).
+
+**Raisons** : les modèles historiques V3 à V8 sont des CamemBERT-base (vérifié dans leurs
+`config.json`), entraînés sur les mêmes splits : F1 macro de 0,557 à 0,646, dont 0,629 pour V6. Garder le même modèle et les mêmes hyperparamètres
+que V6 rend le nouveau pipeline directement comparable à l'ancien : un écart de score
+s'explique alors par le code, pas par le changement de modèle. CamemBERTa-v2 reste la
+prochaine expérience naturelle ; il suffit de changer `model.name` dans `params.yaml`.
 
 ---
 
@@ -56,6 +59,10 @@ hashtags) parfaitement gérés par des regex.
 SMOTE sur du texte produit des exemples peu naturels. 1392 est le nombre
 d'exemples du parti le moins représenté après nettoyage, ce qui garantit
 un corpus 100% réel sans duplication.
+
+**Note** : ce seuil concerne le pipeline de reconstruction (`sherlock dataset balance`).
+Les splits historiques utilisés pour les résultats comptent environ 1 837 textes par parti
+(voir 007).
 
 ---
 
@@ -108,3 +115,54 @@ le gain de temps de chargement est significatif.
 **Raisons** : 10-100× plus rapide que pip pour l'installation.
 `uv.lock` garantit des builds reproductibles. Remplace pip, virtualenv
 et pyenv en un seul outil. Standard en 2026 pour les nouveaux projets Python.
+
+---
+
+## 007 - Conserver les splits historiques tels quels
+
+**Contexte** : le nouveau pipeline doit être évalué, alors que le corpus du projet de fin
+d'études est déjà découpé (11 756 / 1 470 / 1 470).
+
+**Options considérées** :
+- Re-découper le corpus avec `sherlock dataset split` (seed 42)
+- Réutiliser les fichiers `train.csv` / `val.csv` / `test.csv` d'origine
+
+**Décision** : réutiliser les splits d'origine (`sherlock dataset import-legacy`).
+
+**Raisons** : c'est la seule façon de comparer les nouveaux runs aux modèles historiques
+sur exactement les mêmes textes de test. La ré-évaluation du modèle V6 (0,627 contre 0,629
+exporté à l'époque) valide la chaîne complète : données, préfixes, évaluation.
+
+**Défauts assumés** : 8 textes identiques entre train et test, 7 entre train et val, 1 entre
+val et test. C'est négligeable (0,5 % du test set), et l'import les signale au lieu de les
+supprimer. Corriger 5 coquilles de sentiment (`positre`) ne touche pas le test set.
+
+---
+
+## 008 - Sentiment et ironie injectés comme préfixes du texte
+
+**Contexte** : chaque texte est annoté (sentiment, ironie) par Gemini. Faut-il donner ces
+informations au classifieur ?
+
+**Options considérées** :
+- Préfixes textuels : `[NOIRONY] [SENT_négatif] texte…` (modèles historiques V3, V4, V6)
+- Features numériques concaténées au vecteur [CLS] (modèle V8, architecture sur mesure)
+- Texte seul
+
+**Décision** : préfixes textuels par défaut (`model.use_meta: true`), texte seul disponible
+via `sherlock train --no-meta`.
+
+**Raisons** : les préfixes gardent le format standard `AutoModelForSequenceClassification`,
+donc le même code sert à entraîner, évaluer et servir les modèles historiques et nouveaux.
+V8 (features numériques, 0,646) demande une architecture et un chargement spécifiques.
+
+**Ce qu'on ne sait pas encore** : l'apport réel de ces métadonnées. Le dossier historique
+« V4 Wo Sent and ironie » semblait fournir l'ablation (0,627 contre 0,629 pour V6), mais le
+modèle V4 réagit aux préfixes exactement comme V6 : 0,627 avec, 0,615 sans. Son score
+d'origine a donc été mesuré **avec** les préfixes, et ce n'est pas une ablation. La
+comparaison fiable est `make train` contre `make train-ablation`, sur les mêmes splits et
+avec les mêmes hyperparamètres.
+
+**Point d'attention** : en production, sentiment et ironie ne sont pas connus à l'avance.
+Il faudrait les prédire (module `annotate`) ou utiliser le modèle texte seul. La démo laisse
+l'utilisateur les choisir.
