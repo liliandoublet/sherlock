@@ -1,6 +1,6 @@
 [project]
 name = "sherlock"
-version = "0.2.0"
+version = "0.3.0"
 description = "French political ideology classifier with multi-task NLP (party, sentiment, irony)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -51,6 +51,7 @@ ml = [
     "protobuf>=5.28",
 ]
 demo = [
+    "sherlock[ml,data,viz]",
     "streamlit>=1.40",
 ]
 viz = [

@@ -213,12 +213,22 @@ def evaluate(
     split: str = typer.Option("test", "--split", help="train, val ou test."),
     run_name: str | None = typer.Option(None, "--run-name", help="Nom du run MLflow."),
     meta: bool = typer.Option(True, "--meta/--no-meta"),
+    neutral_meta: bool = typer.Option(
+        False,
+        "--neutral-meta",
+        help="Sentiment/ironie neutres pour tous les textes (conditions d'usage réelles).",
+    ),
 ):
     """Ré-évalue un modèle sauvegardé et logge le résultat dans MLflow."""
     from sherlock.model.evaluate import evaluate_model_dir
 
     metrics = evaluate_model_dir(
-        model_dir, data_dir=data_dir, split=split, use_meta=meta, run_name=run_name
+        model_dir,
+        data_dir=data_dir,
+        split=split,
+        use_meta=meta,
+        run_name=run_name,
+        neutral_meta=neutral_meta,
     )
     table = Table(title=f"Évaluation {split}", show_header=True)
     table.add_column("Métrique", style="cyan")
@@ -276,13 +286,15 @@ def predict(
 @app.command()
 def report(
     readme: Path = typer.Option(Path("README.md"), "--readme"),
+    results_doc: Path = typer.Option(Path("docs/results.md"), "--results-doc"),
     reports_dir: Path = typer.Option(Path("reports"), "--reports-dir"),
 ):
-    """Régénère le tableau de résultats du README depuis reports/."""
-    from sherlock.report import update_readme
+    """Régénère le tableau du README et docs/results.md depuis reports/."""
+    from sherlock.report import update_readme, update_results_doc
 
     update_readme(readme, reports_dir)
-    console.print(f"[green]Tableau de résultats mis à jour dans {readme}[/green]")
+    update_results_doc(results_doc, reports_dir)
+    console.print(f"[green]Résultats mis à jour : {readme} et {results_doc}[/green]")
 
 
 @dataset_app.command("import-legacy")

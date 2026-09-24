@@ -1,6 +1,6 @@
 project:
   name: "sherlock"
-  version: "0.2.0"
+  version: "0.3.0"
   language: "fr"
 
 paths:
@@ -64,3 +64,8 @@ legacy:
 mlflow:
   experiment: "sherlock-party-classification"
   tracking_uri: "sqlite:///mlflow.db"
+
+demo:
+  # Modèle servi par la démo publique : identifiant Hugging Face Hub ou dossier local.
+  # Surchargeable avec la variable d'environnement SHERLOCK_MODEL.
+  model: "liliandoublet/sherlock-camembert-v6"

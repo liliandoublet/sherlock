@@ -164,5 +164,32 @@ comparaison fiable est `make train` contre `make train-ablation`, sur les mêmes
 avec les mêmes hyperparamètres.
 
 **Point d'attention** : en production, sentiment et ironie ne sont pas connus à l'avance.
-Il faudrait les prédire (module `annotate`) ou utiliser le modèle texte seul. La démo laisse
-l'utilisateur les choisir.
+Il faudrait les prédire (module `annotate`) ou utiliser le modèle texte seul. La démo publique
+utilise des valeurs neutres (voir 009).
+
+---
+
+## 009 - Démo publique : entrée neutre, poids sur Hugging Face, exemples écrits à la main
+
+**Contexte** : la première démo demandait sentiment et ironie et exigeait des fichiers locaux non
+versionnés. Un visiteur du dépôt ne pouvait ni la lancer, ni comprendre ces champs.
+
+**Décisions** :
+- **Entrée neutre par défaut.** Le modèle V6 est évalué en remplaçant sentiment/ironie par « neutre / non
+  ironique » pour tous les textes : F1 macro **0,626**, contre 0,627 avec les vraies annotations et 0,615
+  sans aucun préfixe. Les annotations ne pèsent presque rien à l'inférence ; la démo les masque (sous
+  « Options avancées ») et affiche le chiffre réel des conditions d'usage (`make eval-legacy`,
+  run `legacy_v6_public_input`). Ce constat porte sur l'inférence d'un modèle entraîné avec préfixes : il ne
+  dit pas ce qu'apporterait un entraînement sans annotations (c'est `make train-ablation`).
+- **Poids sur Hugging Face Hub** (`demo.model` dans `params.yaml`, surchargeable par `SHERLOCK_MODEL`) :
+  423 Mo, trop lourds pour git. `from_pretrained` télécharge et met en cache tout seul, y compris dans
+  Docker. Changer de modèle = changer une ligne.
+- **Exemples rédigés à la main**, aucun texte du corpus redistribué (tweets et contenus tiers). Sur 8 phrases-types
+  essayées, le modèle en classe correctement 4 ; l'appli garde des cas réussis, un cas limite et un texte sans
+  signal, et dit explicitement que le modèle se trompe aussi.
+- **« Le modèle hésite »** sous 40 % de confiance : un score de 30 % ne doit pas être présenté comme une réponse.
+- **Vie privée** : le modèle tourne sur la machine de l'utilisateur, rien n'est enregistré, et la télémétrie
+  Streamlit est coupée (`gatherUsageStats = false`).
+
+**Non retenu** : héberger la démo en ligne. Un service public de classification politique demande une
+modération et une politique de données que ce projet n'a pas ; chacun lance donc sa propre copie en local.

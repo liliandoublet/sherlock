@@ -90,6 +90,26 @@ def test_load_model_requires_config(tmp_path):
         load_model(tmp_path)
 
 
+def test_load_model_missing_path_or_hub_id_is_a_clear_error():
+    """Ni dossier local ni dépôt Hub : message français, pas de trace brute de transformers."""
+    from sherlock.model.classifier import load_model
+
+    with pytest.raises(FileNotFoundError, match="Modèle introuvable"):
+        load_model("/chemin/absolu/qui/nexiste/pas")
+
+
+def test_load_model_accepts_str_and_path(tmp_path):
+    pytest.importorskip("transformers")
+    from sherlock.model.classifier import load_model
+    from tests.unit.tiny_model import save_tiny_model
+
+    directory = save_tiny_model(tmp_path / "model")
+    for source in (directory, str(directory)):
+        model, tokenizer = load_model(source)
+        assert model.config.num_labels == 8
+        assert tokenizer is not None
+
+
 # ── evaluate ──────────────────────────────────────────────────────────────────
 
 

@@ -19,7 +19,7 @@ DEFAULT_MODEL_DIR = Path(cfg.paths.models_dir) / "camembert_party"
 class Predictor:
     """Charge le modèle une fois, prédit ensuite à la demande (CLI, Streamlit)."""
 
-    def __init__(self, model_dir: Path = DEFAULT_MODEL_DIR, use_meta: bool | None = None):
+    def __init__(self, model_dir: str | Path = DEFAULT_MODEL_DIR, use_meta: bool | None = None):
         self.model, self.tokenizer = load_model(model_dir)
         self.model.to(get_device())
         self.use_meta = cfg.model.use_meta if use_meta is None else use_meta
@@ -52,7 +52,7 @@ class Predictor:
 
 def predict_text(
     text: str,
-    model_dir: Path = DEFAULT_MODEL_DIR,
+    model_dir: str | Path = DEFAULT_MODEL_DIR,
     sentiment: str = "neutre",
     irony: bool = False,
 ) -> dict:

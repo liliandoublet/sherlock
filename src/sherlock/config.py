@@ -80,6 +80,10 @@ class MLflowConfig(BaseModel):
     tracking_uri: str
 
 
+class DemoConfig(BaseModel):
+    model: str
+
+
 # ── Modèle principal ──────────────────────────────────────────────────────────
 
 
@@ -94,6 +98,7 @@ class Config(BaseModel):
     model: ModelConfig
     legacy: LegacyConfig
     mlflow: MLflowConfig
+    demo: DemoConfig
 
 
 # ── Chargement ────────────────────────────────────────────────────────────────

@@ -15,38 +15,7 @@ torch = pytest.importorskip("torch")
 mlflow = pytest.importorskip("mlflow")
 transformers = pytest.importorskip("transformers")
 
-from tokenizers import Tokenizer, models, pre_tokenizers
-
-PARTIES = ["EELV", "LFI", "LR", "PCF", "PS", "Reconquête", "Renaissance", "RN"]
-
-
-def tiny_tokenizer():
-    vocab = {"<pad>": 0, "<unk>": 1, "<s>": 2, "</s>": 3}
-    for i, word in enumerate(["texte", "du", "parti", "[NOIRONY]", "[SENT_neutre]"], start=4):
-        vocab[word] = i
-    backend = Tokenizer(models.WordLevel(vocab=vocab, unk_token="<unk>"))
-    backend.pre_tokenizer = pre_tokenizers.WhitespaceSplit()
-    return transformers.PreTrainedTokenizerFast(
-        tokenizer_object=backend, pad_token="<pad>", unk_token="<unk>"
-    )
-
-
-def tiny_model(parties):
-    from sherlock.model.classifier import label_maps
-
-    id2label, label2id = label_maps(parties)
-    config = transformers.CamembertConfig(
-        vocab_size=16,
-        hidden_size=16,
-        num_hidden_layers=1,
-        num_attention_heads=2,
-        intermediate_size=32,
-        max_position_embeddings=520,
-        num_labels=len(id2label),
-        id2label=id2label,
-        label2id=label2id,
-    )
-    return transformers.CamembertForSequenceClassification(config)
+from tests.unit.tiny_model import PARTIES, tiny_model, tiny_tokenizer
 
 
 def write_splits(data_dir):

@@ -1,253 +1,389 @@
 """
-Démo Streamlit de Sherlock.
+Démo grand public de Sherlock : quel parti se cache derrière ce texte ?
 
-Lancer depuis la racine du projet :
-    make demo
+    make demo          # modèle publié sur Hugging Face (téléchargé au premier lancement)
+    make demo-local    # modèle local models/legacy/camembert_v6_meta
+
+Le modèle à servir se choisit avec SHERLOCK_MODEL (identifiant Hub ou dossier local) ;
+par défaut c'est `demo.model` dans params.yaml.
 """
 
 import json
+import os
 from pathlib import Path
 
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from sherlock.config import cfg
-from sherlock.model.features import meta_prefix
-from sherlock.report import render
 
-MODELS_DIR = Path(cfg.paths.models_dir)
-REPORTS_DIR = Path(cfg.paths.reports_dir)
-TEST_SPLIT = Path(cfg.paths.processed_dir) / "test.parquet"
+ROOT = Path(__file__).resolve().parents[1]
+METRICS_DIR = ROOT / cfg.paths.reports_dir / "metrics"
 
-ACCENT = "#2a78d6"  # barre mise en évidence (prédiction)
+ACCENT = "#2a78d6"  # barre mise en évidence
 NEUTRAL = "#8d8c86"  # autres barres ; ≥ 3:1 sur fond clair et sombre
+HESITATION = 0.40  # sous ce seuil de confiance, on dit que le modèle hésite
 SENTIMENTS = ["négatif", "neutre", "positif"]
+MAX_WORDS = 350  # ≈ 512 tokens : au-delà, le texte est tronqué
+GITHUB = "https://github.com/liliandoublet/sherlock"
 
-st.set_page_config(page_title="Sherlock", page_icon="🔍", layout="wide")
+# Exemples rédigés pour la démo (aucun texte du corpus n'est redistribué).
+EXAMPLES = [
+    (
+        "Retraite à 60 ans",
+        "Nous voulons la retraite à 60 ans, le blocage des prix de l'énergie et une VIe République "
+        "pour redonner le pouvoir au peuple.",
+    ),
+    (
+        "Nationalisations",
+        "Nationalisons les grands services publics et augmentons les salaires : le travail doit "
+        "mieux payer que le capital.",
+    ),
+    (
+        "Europe solidaire",
+        "La gauche de gouvernement doit protéger les services publics tout en construisant une "
+        "Europe plus solidaire et une transition juste.",
+    ),
+    (
+        "Identité et sécurité",
+        "Il faut défendre l'identité française, exiger l'assimilation et rétablir la sécurité "
+        "dans nos quartiers.",
+    ),
+    (
+        "Immigration (cas limite)",
+        "Il faut maîtriser l'immigration, défendre nos frontières et instaurer la priorité "
+        "nationale pour les Français.",
+    ),
+    (
+        "Sans signal politique",
+        "Merci à toutes et à tous pour votre présence ce soir, belle soirée !",
+    ),
+]
+
+st.set_page_config(page_title="Sherlock", page_icon="🔍", layout="centered")
 
 
 # ── Chargements (mis en cache) ────────────────────────────────────────────────
 
 
-def find_models() -> list[Path]:
-    """Dossiers de modèles au format save_pretrained ; runs actuels avant l'historique."""
-    dirs = {path.parent for path in MODELS_DIR.glob("**/config.json")}
-    return sorted(dirs, key=lambda p: ("legacy" in p.parts, str(p)))
+def default_model_source() -> str:
+    return os.environ.get("SHERLOCK_MODEL") or cfg.demo.model
 
 
-@st.cache_resource(show_spinner="Chargement du modèle…")
-def load_predictor(model_dir: str):
+@st.cache_resource(
+    show_spinner="Chargement du modèle (au premier lancement : ~420 Mo à télécharger)…"
+)
+def load_predictor(source: str):
     from sherlock.model.predict import Predictor
 
-    return Predictor(Path(model_dir))
+    return Predictor(source)
 
 
 @st.cache_data
-def load_test_split() -> pd.DataFrame | None:
-    return pd.read_parquet(TEST_SPLIT) if TEST_SPLIT.exists() else None
-
-
-@st.cache_data
-def load_runs() -> dict[str, dict]:
+def load_metrics() -> dict[str, dict]:
     return {
         path.parent.name: json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(REPORTS_DIR.glob("metrics/*/test_metrics.json"))
+        for path in sorted(METRICS_DIR.glob("*/test_metrics.json"))
     }
 
 
-def run_for_model(model_dir: Path) -> tuple[str, dict] | None:
-    for name, result in load_runs().items():
-        if result.get("model_dir") and Path(result["model_dir"]) == model_dir:
-            return name, result
-    return None
+def pct(value: float) -> str:
+    return f"{value * 100:.1f} %".replace(".", ",")
 
 
 # ── Graphiques ────────────────────────────────────────────────────────────────
 
 
-def bar_layout(fig: go.Figure, height: int, x_range: list[float]) -> go.Figure:
+def bar_chart(
+    labels: list[str],
+    values: list[float],
+    colors: list[str] | str,
+    texts: list[str],
+    hover: str,
+    height: int,
+    x_max: float = 1.0,
+) -> go.Figure:
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=labels,
+            orientation="h",
+            width=0.6,
+            marker_color=colors,
+            text=texts,
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate=hover,
+        )
+    )
     fig.update_layout(
         height=height,
         margin={"l": 10, "r": 10, "t": 10, "b": 10},
         barcornerradius=4,
         showlegend=False,
-        xaxis={"range": x_range, "tickformat": ".0%", "gridwidth": 1, "zeroline": False},
+        xaxis={"range": [0, x_max], "tickformat": ".0%", "gridwidth": 1, "zeroline": False},
         yaxis={"showgrid": False},
     )
     return fig
 
 
-def probability_chart(scores: dict[str, float], predicted: str, true_party: str | None):
-    """Probabilités par parti : la prédiction en bleu, le parti réel marqué dans son libellé."""
+def probability_chart(scores: dict[str, float], predicted: str) -> go.Figure:
+    """Probabilités par parti : la prédiction en bleu, valeur affichée sur les deux premiers."""
     items = sorted(scores.items(), key=lambda kv: kv[1])
-    labels = [f"{party}  (parti réel)" if party == true_party else party for party, _ in items]
-    fig = go.Figure(
-        go.Bar(
-            x=[score for _, score in items],
-            y=labels,
-            orientation="h",
-            width=0.6,
-            marker_color=[ACCENT if party == predicted else NEUTRAL for party, _ in items],
-            text=[
-                f"{score:.0%}" if party in (predicted, true_party) else "" for party, score in items
-            ],
-            textposition="outside",
-            cliponaxis=False,
-            hovertemplate="%{y} : %{x:.1%}<extra></extra>",
-        )
+    top_two = {party for party, _ in items[-2:]}
+    return bar_chart(
+        labels=[party for party, _ in items],
+        values=[score for _, score in items],
+        colors=[ACCENT if party == predicted else NEUTRAL for party, _ in items],
+        texts=[f"{score:.0%}" if party in top_two else "" for party, score in items],
+        hover="%{y} : %{x:.1%}<extra></extra>",
+        height=340,
+        x_max=1.1,
     )
-    return bar_layout(fig, height=340, x_range=[0, 1.1])
 
 
-def f1_by_party_chart(result: dict):
-    """F1 par parti pour un run ; seuls le meilleur et le moins bon sont étiquetés."""
+def f1_by_party_chart(result: dict) -> go.Figure:
     f1 = {label: result["report"][label]["f1-score"] for label in result["labels"]}
     items = sorted(f1.items(), key=lambda kv: kv[1])
     extremes = {items[0][0], items[-1][0]}
-    fig = go.Figure(
-        go.Bar(
-            x=[score for _, score in items],
-            y=[party for party, _ in items],
-            orientation="h",
-            width=0.6,
-            marker_color=ACCENT,
-            text=[f"{score:.2f}" if party in extremes else "" for party, score in items],
-            textposition="outside",
-            cliponaxis=False,
-            hovertemplate="%{y} : F1 %{x:.3f}<extra></extra>",
+    return bar_chart(
+        labels=[party for party, _ in items],
+        values=[score for _, score in items],
+        colors=ACCENT,
+        texts=[f"{score:.2f}" if party in extremes else "" for party, score in items],
+        hover="%{y} : F1 %{x:.3f}<extra></extra>",
+        height=320,
+    )
+
+
+def comparison_chart(rows: list[tuple[str, float]], highlight: str) -> go.Figure:
+    """Comparaison de scores F1 : la ligne mise en avant en bleu, les autres en gris."""
+    rows = sorted(rows, key=lambda row: row[1])
+    return bar_chart(
+        labels=[name for name, _ in rows],
+        values=[score for _, score in rows],
+        colors=[ACCENT if name == highlight else NEUTRAL for name, _ in rows],
+        texts=[pct(score) for _, score in rows],
+        hover="%{y} : %{x:.1%}<extra></extra>",
+        height=230,
+        x_max=0.8,
+    )
+
+
+def show_analysis(texte: str) -> None:
+    """Prédit et affiche le résultat ; affiche une aide claire si le modèle est introuvable."""
+    source = st.session_state.get("model_source", default_model_source())
+    try:
+        predictor = load_predictor(source)
+    except FileNotFoundError as error:
+        st.error(str(error))
+        st.info(
+            "Vérifie ta connexion Internet (premier lancement), ou utilise un modèle local : "
+            "`make demo-local`."
         )
+        return
+
+    use_annotations = st.session_state.get("use_annotations", False)
+    sentiment = st.session_state.get("sentiment", "neutre") if use_annotations else "neutre"
+    irony = st.session_state.get("irony", False) if use_annotations else False
+    use_meta = st.session_state.get("use_meta", True)
+
+    with st.spinner("Analyse en cours…"):
+        result = predictor.predict([texte], [sentiment], [irony], use_meta=use_meta)[0]
+
+    ranked = sorted(result["all_scores"].items(), key=lambda kv: -kv[1])
+    (top, top_score), (second, second_score) = ranked[0], ranked[1]
+    n_words = len(texte.split())
+
+    if n_words > MAX_WORDS:
+        st.info(f"Texte long : seuls les {MAX_WORDS} premiers mots environ sont analysés.")
+    elif n_words < 5:
+        st.info("Texte très court : le résultat est peu fiable.")
+
+    hesitates = top_score < HESITATION
+    if hesitates:
+        st.warning(
+            f"Le modèle hésite : **{top}** ({pct(top_score)}) ou **{second}** "
+            f"({pct(second_score)}). Ce texte ne contient pas de signal assez net."
+        )
+
+    col_result, col_chart = st.columns([1, 2])
+    with col_result:
+        st.metric(
+            "Piste la plus probable" if hesitates else "Parti le plus probable",
+            top,
+            f"confiance {top_score:.0%}",
+            delta_color="off",
+        )
+        st.caption(f"Deuxième hypothèse : {second} ({pct(second_score)})")
+    with col_chart:
+        st.plotly_chart(
+            probability_chart(result["all_scores"], top),
+            width="stretch",
+            config={"displayModeBar": False},
+        )
+
+    caption = (
+        "Estimation statistique : le modèle devine le parti **de l'auteur** d'après le style et "
+        "le vocabulaire, pas la position idéologique du texte."
     )
-    fig.update_layout(xaxis_tickformat=".1f")
-    return bar_layout(fig, height=320, x_range=[0, 1])
+    reference = load_metrics().get("legacy_v6_public_input")
+    if reference:
+        errors = pct(1 - reference["overall"]["accuracy"])
+        caption += f" Il se trompe dans {errors} des cas sur nos textes de test."
+    st.caption(caption)
 
 
-# ── Barre latérale : choix du modèle ──────────────────────────────────────────
+# ── En-tête ───────────────────────────────────────────────────────────────────
 
-st.sidebar.title("🔍 Sherlock")
-st.sidebar.caption("Classification du parti politique d'un texte français (8 partis).")
-
-models = find_models()
-if not models:
-    st.sidebar.error("Aucun modèle dans `models/`.")
-    st.error(
-        "Aucun modèle trouvé. Lance `make train`, ou place le modèle historique dans "
-        "`models/legacy/camembert_v6_meta/`."
-    )
-    st.stop()
-
-model_dir = st.sidebar.selectbox(
-    "Modèle", models, format_func=lambda p: str(p.relative_to(MODELS_DIR))
+st.title("🔍 Sherlock")
+st.subheader("Quel parti politique français se cache derrière ce texte ?")
+st.caption(
+    "Un modèle CamemBERT entraîné sur des tweets et des sites officiels de 8 partis : "
+    "EELV, LFI, LR, PCF, PS, Reconquête, Renaissance et RN."
 )
-use_meta = st.sidebar.toggle(
-    "Sentiment + ironie en entrée",
-    value="nometa" not in model_dir.name,
-    help="Doit correspondre à la façon dont le modèle a été entraîné.",
-)
-run = run_for_model(model_dir)
-if run:
-    name, result = run
-    st.sidebar.metric("F1 macro (test)", f"{result['overall']['f1_macro']:.3f}")
-    st.sidebar.caption(f"Run MLflow : `{name}`")
 
-predictor = load_predictor(str(model_dir))
+tab_try, tab_perf, tab_about = st.tabs(["Essayer", "Performances", "À propos"])
 
 
-# ── Onglets ───────────────────────────────────────────────────────────────────
+# ── Onglet 1 : essayer ────────────────────────────────────────────────────────
 
-tab_predict, tab_results = st.tabs(["Prédire", "Résultats"])
-
-with tab_predict:
-    test_df = load_test_split()
-
-    def pick_example():
-        row = test_df.sample(1).iloc[0]
-        st.session_state.texte = row["texte"]
-        st.session_state.sentiment = row["sentiment"]
-        st.session_state.ironie = bool(row["ironie"])
-        st.session_state.exemple = row.to_dict()
-
+with tab_try:
     st.session_state.setdefault("texte", "")
-    st.session_state.setdefault("sentiment", "neutre")
-    st.session_state.setdefault("ironie", False)
 
-    col_btn, col_hint = st.columns([1, 3])
-    col_btn.button(
-        "🎲 Exemple du test set",
-        on_click=pick_example,
-        disabled=test_df is None,
-        help=None if test_df is not None else "Lance `make data` pour activer les exemples.",
+    def use_example(text: str) -> None:
+        st.session_state.texte = text
+        st.session_state.lance = True
+
+    st.markdown("**Essayer avec un exemple**")
+    st.caption(
+        "Phrases rédigées pour la démo. Elles montrent le fonctionnement, pas la précision : "
+        "le modèle se trompe aussi, surtout entre partis proches."
     )
-    col_hint.caption(
-        "Tire un texte jamais vu à l'entraînement et affiche son vrai parti à côté de la prédiction."
-    )
-
-    texte = st.text_area(
-        "Texte",
-        key="texte",
-        height=140,
-        placeholder="Collez un tweet ou un extrait de discours politique…",
-    )
-    col_sent, col_iro = st.columns(2)
-    sentiment = col_sent.selectbox("Sentiment", SENTIMENTS, key="sentiment", disabled=not use_meta)
-    ironie = col_iro.checkbox("Ironique", key="ironie", disabled=not use_meta)
-
-    exemple = st.session_state.get("exemple")
-    true_party = exemple["parti"] if exemple and exemple["texte"] == texte else None
-
-    if texte.strip():
-        prediction = predictor.predict([texte], [sentiment], [ironie], use_meta=use_meta)[0]
-        parti, confidence = prediction["parti"], prediction["confidence"]
-
-        col_metric, col_chart = st.columns([1, 2])
-        with col_metric:
-            st.metric("Parti prédit", parti, f"confiance {confidence:.0%}", delta_color="off")
-            if true_party:
-                if true_party == parti:
-                    st.success(f"✓ Correct : parti réel {true_party} ({exemple['media']})")
-                else:
-                    st.error(f"✗ Erreur : parti réel {true_party} ({exemple['media']})")
-        with col_chart:
-            st.plotly_chart(
-                probability_chart(prediction["all_scores"], parti, true_party),
+    for row in (EXAMPLES[:3], EXAMPLES[3:]):
+        for column, (label, text) in zip(st.columns(3), row, strict=True):
+            column.button(
+                label,
+                key=f"ex_{label}",
+                on_click=use_example,
+                args=(text,),
                 width="stretch",
-                config={"displayModeBar": False},
             )
 
-        with st.expander("Entrée exacte envoyée au modèle"):
-            prefix = meta_prefix(sentiment, ironie) if use_meta else ""
-            st.code(prefix + texte, language=None, wrap_lines=True)
+    with st.form("analyse"):
+        st.text_area(
+            "Ou colle ton propre texte (tweet, communiqué, extrait de discours…)",
+            key="texte",
+            height=140,
+            max_chars=3000,
+        )
+        submitted = st.form_submit_button("Analyser", type="primary")
+    if submitted:
+        st.session_state.lance = True
+
+    texte = st.session_state.texte.strip()
+    if st.session_state.get("lance") and not texte:
+        st.warning("Écris ou colle d'abord un texte.")
+    elif st.session_state.get("lance"):
+        show_analysis(texte)
+
+    with st.expander("Options avancées"):
+        st.text_input(
+            "Modèle (dossier local ou identifiant Hugging Face)",
+            value=default_model_source(),
+            key="model_source",
+        )
+        st.checkbox(
+            "Le modèle attend un préfixe sentiment/ironie (cas des modèles entraînés avec)",
+            value=True,
+            key="use_meta",
+        )
+        st.toggle(
+            "Renseigner moi-même le sentiment et l'ironie",
+            value=False,
+            key="use_annotations",
+            help="Par défaut : neutre et non ironique, les annotations n'étant pas connues d'avance.",
+        )
+        st.selectbox("Sentiment", SENTIMENTS, index=1, key="sentiment")
+        st.checkbox("Ironique", key="irony")
+
+
+# ── Onglet 2 : performances ───────────────────────────────────────────────────
+
+with tab_perf:
+    runs = load_metrics()
+    demo_run = runs.get("legacy_v6_public_input")
+    if demo_run is None:
+        st.info("Métriques absentes : lance `make all` pour les générer.")
     else:
-        st.info("Saisis un texte ou tire un exemple du test set.")
-
-with tab_results:
-    runs = load_runs()
-    st.markdown(render(REPORTS_DIR))
-
-    if runs:
-        st.divider()
-        name = st.selectbox("Détail d'un run", list(runs))
-        result = runs[name]
-        overall, by_media = result["overall"], result.get("by_media", {})
-
-        cols = st.columns(4)
-        cols[0].metric("F1 macro", f"{overall['f1_macro']:.3f}")
-        cols[1].metric("Accuracy", f"{overall['accuracy']:.3f}")
-        cols[2].metric("F1 Twitter", f"{by_media.get('Twitter', {}).get('f1_macro', 0):.3f}")
-        cols[3].metric("F1 site web", f"{by_media.get('site_web', {}).get('f1_macro', 0):.3f}")
-
-        col_f1, col_cm = st.columns(2)
-        with col_f1:
-            st.subheader("F1 par parti")
-            st.plotly_chart(
-                f1_by_party_chart(result), width="stretch", config={"displayModeBar": False}
+        n_classes = len(demo_run["labels"])
+        rows = [
+            (f"Hasard (1 chance sur {n_classes})", 1 / n_classes),
+            ("Baseline TF-IDF + régression", runs["tfidf_logreg"]["overall"]["f1_macro"]),
+            ("Sherlock (conditions de la démo)", demo_run["overall"]["f1_macro"]),
+        ]
+        if "legacy_v6_meta" in runs:
+            rows.append(
+                (
+                    "Sherlock + annotations sentiment/ironie",
+                    runs["legacy_v6_meta"]["overall"]["f1_macro"],
+                )
             )
-            table = pd.DataFrame(result["report"]).T.loc[result["labels"]]
-            st.dataframe(
-                table[["precision", "recall", "f1-score", "support"]].round(3), width="stretch"
+
+        n_tests = f"{demo_run['n']:,}".replace(",", " ")
+        st.markdown(
+            f"**Score F1 macro** sur {n_tests} textes que le modèle n'a jamais vus : "
+            f"1 = parfait, {pct(1 / n_classes)} = réponse au hasard."
+        )
+        st.plotly_chart(
+            comparison_chart(rows, "Sherlock (conditions de la démo)"),
+            width="stretch",
+            config={"displayModeBar": False},
+        )
+
+        st.markdown("**Score par parti**")
+        st.plotly_chart(
+            f1_by_party_chart(demo_run), width="stretch", config={"displayModeBar": False}
+        )
+
+        by_media = demo_run.get("by_media", {})
+        if by_media:
+            columns = st.columns(len(by_media))
+            names = {"Twitter": "Sur les tweets", "site_web": "Sur les sites officiels"}
+            for column, (media, values) in zip(columns, by_media.items(), strict=True):
+                column.metric(names.get(media, media), pct(values["f1_macro"]))
+
+        image = METRICS_DIR / "legacy_v6_public_input" / "test_confusion_matrix.png"
+        if image.exists():
+            st.markdown("**Qui est confondu avec qui**")
+            st.image(
+                str(image),
+                caption="Chaque ligne est le vrai parti, chaque colonne le parti prédit. "
+                "Plus la diagonale est foncée, mieux le parti est reconnu.",
             )
-        with col_cm:
-            st.subheader("Matrice de confusion")
-            image = REPORTS_DIR / "metrics" / name / "test_confusion_matrix.png"
-            if image.exists():
-                st.image(str(image), caption="Lignes : parti réel · colonnes : parti prédit")
+
+
+# ── Onglet 3 : à propos ───────────────────────────────────────────────────────
+
+with tab_about:
+    st.markdown(
+        f"""
+**Comment ça marche.** Sherlock est un modèle de langue français (CamemBERT) réentraîné pour
+classer un texte parmi 8 partis. Il a appris sur 14 696 textes : des tweets de 24 comptes de
+personnalités politiques et des extraits de sites officiels, de 2019 à 2025.
+
+**Ce que « parti » veut dire ici.** Le modèle prédit le parti *de l'auteur du texte*, d'après son
+style et son vocabulaire. Il ne mesure ni la position idéologique d'un texte, ni sa véracité.
+
+**Limites.**
+- Il se trompe régulièrement, surtout entre partis proches (LR/RN, PS/PCF, RN/Reconquête).
+- Un texte factuel ou sans vocabulaire politique ne contient aucun signal : le modèle hésite.
+- Les opinions politiques sont une donnée sensible : n'utilise pas cet outil pour profiler une
+  personne réelle.
+
+**Vie privée.** Le modèle s'exécute sur ta machine. Le texte que tu saisis n'est ni enregistré ni
+envoyé à un service tiers ; seul le téléchargement initial du modèle utilise Internet.
+
+**Code, données et méthode** : [{GITHUB}]({GITHUB})
+"""
+    )

@@ -158,10 +158,14 @@ def evaluate_model_dir(
     split: str = "test",
     use_meta: bool | None = None,
     run_name: str | None = None,
+    neutral_meta: bool = False,
 ) -> dict:
     """
     Ré-évalue un modèle sauvegardé et logge le résultat comme run MLflow.
     Sert notamment à vérifier le modèle historique V6 avec le code actuel.
+
+    neutral_meta : remplace sentiment/ironie par « neutre / non ironique » pour tous les textes,
+    c'est-à-dire les conditions d'usage réelles (le public ne connaît pas ces annotations).
     """
     import mlflow
 
@@ -171,6 +175,8 @@ def evaluate_model_dir(
     use_meta = cfg.model.use_meta if use_meta is None else use_meta
     run_name = run_name or f"eval_{model_dir.parent.name}_{model_dir.name}"
     df = pd.read_parquet(data_dir / f"{split}.parquet")
+    if neutral_meta:
+        df = df.assign(sentiment="neutre", ironie=False)
 
     model, tokenizer = load_model(model_dir)
     model.to(get_device())
@@ -180,7 +186,14 @@ def evaluate_model_dir(
         mlflow.set_tags(
             {"git_commit": git_commit(), "stage": "evaluation", "model_dir": str(model_dir)}
         )
-        mlflow.log_params({"model_dir": str(model_dir), "split": split, "use_meta": use_meta})
+        mlflow.log_params(
+            {
+                "model_dir": str(model_dir),
+                "split": split,
+                "use_meta": use_meta,
+                "neutral_meta": neutral_meta,
+            }
+        )
         result = evaluate_dataframe(model, tokenizer, df, use_meta)
         result |= {"run_id": run.info.run_id, "model_dir": str(model_dir), "use_meta": use_meta}
         log_result_to_mlflow(result, split, Path(cfg.paths.reports_dir) / "metrics" / run_name)

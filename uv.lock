@@ -3678,7 +3678,7 @@ wheels = [
 
 [[package]]
 name = "sherlock"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "loguru" },
@@ -3702,7 +3702,24 @@ data = [
     { name = "scikit-learn" },
 ]
 demo = [
+    { name = "accelerate" },
+    { name = "datasets" },
+    { name = "emoji" },
+    { name = "ftfy" },
+    { name = "langdetect" },
+    { name = "matplotlib" },
+    { name = "mlflow" },
+    { name = "pandas" },
+    { name = "pandera" },
+    { name = "plotly" },
+    { name = "protobuf" },
+    { name = "pyarrow" },
+    { name = "scikit-learn" },
+    { name = "seaborn" },
+    { name = "sentencepiece" },
     { name = "streamlit" },
+    { name = "torch" },
+    { name = "transformers" },
 ]
 dev = [
     { name = "ipykernel" },
@@ -3769,6 +3786,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'data'", specifier = ">=1.5" },
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.13" },
     { name = "sentencepiece", marker = "extra == 'ml'", specifier = ">=0.2" },
+    { name = "sherlock", extras = ["ml", "data", "viz"], marker = "extra == 'demo'" },
     { name = "streamlit", marker = "extra == 'demo'", specifier = ">=1.40" },
     { name = "tenacity", marker = "extra == 'scraping'", specifier = ">=9.0" },
     { name = "torch", marker = "extra == 'ml'", specifier = ">=2.5" },

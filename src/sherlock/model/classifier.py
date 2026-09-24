@@ -37,11 +37,24 @@ def build_model(parties: list[str] | None = None, model_name: str | None = None)
     return model
 
 
-def load_model(model_dir: Path):
-    """Charge un modèle fine-tuné et son tokenizer depuis un dossier save_pretrained."""
-    if not (model_dir / "config.json").exists():
-        raise FileNotFoundError(f"Pas de config.json dans {model_dir}")
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
-    logger.info(f"Modèle chargé : {model_dir}")
+def load_model(model_dir: str | Path):
+    """
+    Charge un modèle fine-tuné et son tokenizer.
+
+    `model_dir` est soit un dossier local (format save_pretrained), soit un identifiant
+    Hugging Face Hub (« utilisateur/dépôt »), téléchargé puis mis en cache au premier appel.
+    """
+    source = str(model_dir)
+    local = Path(source)
+    if local.exists() and not (local / "config.json").exists():
+        raise FileNotFoundError(f"Pas de config.json dans {local}")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(source)
+        model = AutoModelForSequenceClassification.from_pretrained(source)
+    except (OSError, ValueError) as error:
+        raise FileNotFoundError(
+            f"Modèle introuvable : « {source} » n'est ni un dossier local ni un dépôt "
+            "Hugging Face accessible."
+        ) from error
+    logger.info(f"Modèle chargé : {source}")
     return model, tokenizer
