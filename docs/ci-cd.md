@@ -34,6 +34,25 @@ Ensuite, onglet *Actions* : le workflow *Release* doit passer au vert. Pour que 
 tirer l'image, rendre le paquet public (GitHub → profil → *Packages* → `sherlock` → *Package settings*
 → *Change visibility*).
 
+## Site vitrine : GitHub Pages
+
+[`pages.yml`](../.github/workflows/pages.yml) publie le dossier `site/` à chaque push sur `main` qui le
+modifie. À activer une seule fois : *Settings* → *Pages* → *Source* : **GitHub Actions**. Le site est
+ensuite servi sur <https://liliandoublet.github.io/sherlock/>.
+
+La page est un seul fichier HTML, sans build ni dépendance. Ses données (métriques, exemples) sont
+dans la balise `<script id="sherlock-data">`, réécrite par `make site` depuis `reports/metrics/` :
+aucun chiffre n'y est saisi à la main, et un test vérifie qu'elle est à jour.
+
+```bash
+make site          # met à jour site/index.html (réponses aux exemples si le modèle V6 local est là)
+make site-serve    # aperçu sur http://localhost:8000
+```
+
+Avec le modèle local `models/legacy/camembert_v6_meta`, `make site` calcule aussi les probabilités
+réelles des six exemples de la démo, affichées sur le site. Sans modèle, la page invite à les coller
+dans la démo et les réponses déjà calculées sont conservées.
+
 ## En local
 
 ```bash

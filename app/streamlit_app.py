@@ -16,49 +16,15 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from sherlock.config import cfg
+from sherlock.demo import EXAMPLES, HESITATION, MAX_WORDS, MIN_WORDS
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS_DIR = ROOT / cfg.paths.reports_dir / "metrics"
 
 ACCENT = "#2a78d6"  # barre mise en évidence
 NEUTRAL = "#8d8c86"  # autres barres ; ≥ 3:1 sur fond clair et sombre
-HESITATION = 0.40  # sous ce seuil de confiance, on dit que le modèle hésite
 SENTIMENTS = ["négatif", "neutre", "positif"]
-MAX_WORDS = 350  # ≈ 512 tokens : au-delà, le texte est tronqué
 GITHUB = "https://github.com/liliandoublet/sherlock"
-
-# Exemples rédigés pour la démo (aucun texte du corpus n'est redistribué).
-EXAMPLES = [
-    (
-        "Retraite à 60 ans",
-        "Nous voulons la retraite à 60 ans, le blocage des prix de l'énergie et une VIe République "
-        "pour redonner le pouvoir au peuple.",
-    ),
-    (
-        "Nationalisations",
-        "Nationalisons les grands services publics et augmentons les salaires : le travail doit "
-        "mieux payer que le capital.",
-    ),
-    (
-        "Europe solidaire",
-        "La gauche de gouvernement doit protéger les services publics tout en construisant une "
-        "Europe plus solidaire et une transition juste.",
-    ),
-    (
-        "Identité et sécurité",
-        "Il faut défendre l'identité française, exiger l'assimilation et rétablir la sécurité "
-        "dans nos quartiers.",
-    ),
-    (
-        "Immigration (cas limite)",
-        "Il faut maîtriser l'immigration, défendre nos frontières et instaurer la priorité "
-        "nationale pour les Français.",
-    ),
-    (
-        "Sans signal politique",
-        "Merci à toutes et à tous pour votre présence ce soir, belle soirée !",
-    ),
-]
 
 st.set_page_config(page_title="Sherlock", page_icon="🔍", layout="centered")
 
@@ -197,7 +163,7 @@ def show_analysis(texte: str) -> None:
 
     if n_words > MAX_WORDS:
         st.info(f"Texte long : seuls les {MAX_WORDS} premiers mots environ sont analysés.")
-    elif n_words < 5:
+    elif n_words < MIN_WORDS:
         st.info("Texte très court : le résultat est peu fiable.")
 
     hesitates = top_score < HESITATION

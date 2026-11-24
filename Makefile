@@ -2,13 +2,14 @@
 #   make all            données + ré-évaluation V6 + baseline (pas de fine-tuning)
 #   make train          fine-tuning CamemBERT (~30-60 min sur GPU)
 #   make report         régénère le tableau de résultats du README
+#   make site           met à jour le site vitrine (site/index.html)
 #   make demo           démo publique (modèle téléchargé depuis Hugging Face)
 
 RUN := uv run
 SHERLOCK := $(RUN) sherlock
 
-.PHONY: help install install-demo data eval-legacy baselines train train-ablation report all \
-        mlflow demo demo-local publish-model test lint format docker-build docker-run
+.PHONY: help install install-demo data eval-legacy baselines train train-ablation report site all \
+        site-serve mlflow demo demo-local publish-model test lint format docker-build docker-run
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -38,7 +39,13 @@ train-ablation: ## Fine-tuning CamemBERT, texte seul (run MLflow camembert_nomet
 report: ## Régénère le tableau du README et docs/results.md depuis reports/
 	$(SHERLOCK) report
 
-all: data eval-legacy baselines report ## Tout sauf le fine-tuning
+site: ## Met à jour le site vitrine depuis reports/ (+ réponses aux exemples si le modèle V6 local est là)
+	$(SHERLOCK) site $(if $(wildcard models/legacy/camembert_v6_meta),--model models/legacy/camembert_v6_meta)
+
+site-serve: ## Aperçu du site vitrine sur http://localhost:8000
+	$(RUN) python -m http.server 8000 --directory site
+
+all: data eval-legacy baselines report site ## Tout sauf le fine-tuning
 
 mlflow: ## Interface MLflow sur http://localhost:5000
 	$(RUN) mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5000

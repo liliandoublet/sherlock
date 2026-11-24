@@ -297,6 +297,35 @@ def report(
     console.print(f"[green]Résultats mis à jour : {readme} et {results_doc}[/green]")
 
 
+# ── Commande : site ───────────────────────────────────────────────────────────
+
+
+@app.command("site")
+def site_cmd(
+    page: Path = typer.Option(Path("site/index.html"), "--page", help="Page du site vitrine."),
+    reports_dir: Path = typer.Option(Path("reports"), "--reports-dir"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="Modèle qui calcule les réponses aux exemples (dossier local ou identifiant Hub). "
+        "Sans modèle, les réponses déjà présentes dans la page sont conservées.",
+    ),
+):
+    """Met à jour les données du site vitrine (site/index.html) depuis reports/."""
+    from sherlock.site import update_site
+
+    if not page.exists():
+        console.print(f"[red]Page introuvable : {page}[/red]")
+        raise typer.Exit(1)
+
+    data = update_site(page, reports_dir, model_source=model)
+    answered = sum(example["scores"] is not None for example in data["examples"])
+    console.print(
+        f"[green]Site mis à jour : {page} ({len(data['runs'])} runs, "
+        f"{answered}/{len(data['examples'])} exemples avec réponse du modèle)[/green]"
+    )
+
+
 @dataset_app.command("import-legacy")
 def dataset_import_legacy(
     src_dir: Path = typer.Argument(

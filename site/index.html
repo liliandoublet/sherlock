@@ -1,0 +1,960 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sherlock</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Sherlock est un CamemBERT fine-tuné qui estime lequel de 8 partis politiques français a écrit un texte. Démo, exemples, performances et limites.">
+<meta property="og:title" content="Sherlock : quel parti se cache derrière ce texte ?">
+<meta property="og:description" content="Un CamemBERT fine-tuné qui attribue un texte politique français à l'un de 8 partis. Démo, exemples et performances mesurées sur 1 470 textes jamais vus.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,600..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Mise en page : une colonne d'enquête (70rem). Le hero pose la question et montre la pièce
+   analysée ; ensuite les exemples, la démo, les preuves chiffrées, la méthode, les limites. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --sunk: #e8ecf2;
+  --ink: #121722;
+  --ink-2: #414a5c;
+  --muted: #5d6678;
+  --rule: #d5dbe4;
+  --accent: #2a78d6;
+  --accent-ink: #1c60b3;
+  --on-accent: #ffffff;
+  --mark: #8d8c86;
+  --warn-bg: #fbefd5;
+  --warn-ink: #774c00;
+  --tip-bg: #121722;
+  --tip-ink: #f3f5f8;
+
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --text: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.1875rem;
+  --step-2: 1.5rem;
+  --step-3: clamp(1.75rem, 1.2rem + 2.2vw, 2.5rem);
+  --step-4: clamp(2.35rem, 1.2rem + 4.8vw, 4.5rem);
+
+  --radius: 10px;
+  --wrap: 70rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1015;
+    --surface: #151a22;
+    --sunk: #1c222c;
+    --ink: #e8ecf2;
+    --ink-2: #b9c1cf;
+    --muted: #8f98a9;
+    --rule: #283040;
+    --accent: #4b92e8;
+    --accent-ink: #86b7f2;
+    --on-accent: #0b1220;
+    --mark: #8d8c86;
+    --warn-bg: #352a12;
+    --warn-ink: #f0c66e;
+    --tip-bg: #e8ecf2;
+    --tip-ink: #0d1015;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1015;
+  --surface: #151a22;
+  --sunk: #1c222c;
+  --ink: #e8ecf2;
+  --ink-2: #b9c1cf;
+  --muted: #8f98a9;
+  --rule: #283040;
+  --accent: #4b92e8;
+  --accent-ink: #86b7f2;
+  --on-accent: #0b1220;
+  --mark: #8d8c86;
+  --warn-bg: #352a12;
+  --warn-ink: #f0c66e;
+  --tip-bg: #e8ecf2;
+  --tip-ink: #0d1015;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--step-0)/1.6 var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+a { color: var(--accent-ink); text-underline-offset: 0.18em; }
+a:hover { text-decoration-thickness: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+code, kbd, pre { font-family: var(--mono); }
+
+.wrap {
+  max-width: var(--wrap);
+  margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.eyebrow {
+  font: 500 0.75rem/1.3 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ── En-tête ─────────────────────────────────────────── */
+.site-head .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+  padding-block: 1.1rem;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font: 800 1.2rem/1 var(--display);
+  font-stretch: 125%;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.wordmark svg { width: 1.35rem; height: 1.35rem; flex: none; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; font-size: 0.9375rem; }
+.site-nav a { color: var(--ink-2); text-decoration: none; }
+.site-nav a:hover { color: var(--ink); text-decoration: underline; }
+
+/* ── Hero ────────────────────────────────────────────── */
+.hero .wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: 3rem;
+  align-items: center;
+  padding-block: 3rem 4.5rem;
+}
+.hero-copy { display: grid; gap: 1.5rem; min-width: 0; }
+.hero h1 {
+  font: 800 var(--step-4)/1.02 var(--display);
+  font-stretch: 116%;
+  letter-spacing: -0.015em;
+}
+.lead { font-size: var(--step-1); color: var(--ink-2); max-width: 36em; }
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2.5rem;
+  margin: 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+}
+.facts div { display: grid; gap: 0.15rem; }
+.facts dt { font-size: var(--step--1); color: var(--muted); }
+.facts dd { margin: 0; font: 600 var(--step-2)/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.facts .is-key dd { color: var(--accent-ink); }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.6rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 0.9375rem/1 var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.btn:hover { border-color: var(--ink-2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
+.btn svg { width: 1rem; height: 1rem; }
+
+.specimen {
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(18, 23, 34, 0.35);
+}
+.specimen-in {
+  padding: 1rem 1.1rem;
+  background: var(--sunk);
+  border-radius: 8px;
+  font: 400 0.9375rem/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+.specimen-in .tok { color: var(--accent-ink); font-weight: 600; }
+.specimen-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--step--1);
+  color: var(--muted);
+}
+.specimen-flow::before, .specimen-flow::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.specimen-note { font-size: var(--step--1); color: var(--muted); }
+.suspects { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.suspect {
+  flex: 1 0 auto;
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  font: 600 0.8125rem/1.2 var(--mono);
+  overflow-wrap: anywhere;
+}
+.suspect span { color: var(--muted); font-weight: 400; }
+
+/* ── Sections ────────────────────────────────────────── */
+.block { border-top: 1px solid var(--rule); }
+.block > .wrap { padding-block: 4rem 4.5rem; display: grid; gap: 2rem; }
+.block-head { display: grid; gap: 0.75rem; max-width: 46rem; }
+.block h2 {
+  font: 750 var(--step-3)/1.1 var(--display);
+  font-stretch: 112%;
+  letter-spacing: -0.01em;
+}
+.block-head p { color: var(--ink-2); max-width: 40em; }
+
+/* ── Barres (une seule échelle 0-100 % par graphique) ── */
+.bars { display: grid; gap: 0.35rem; --label-w: 13.5rem; }
+.bar-row, .bar-axis {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr) 4.25rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+.bar-row { padding: 0.3rem 0.35rem; margin-inline: -0.35rem; border-radius: 6px; }
+.bar-row[data-tip] { cursor: default; }
+.bar-row[data-tip]:hover, .bar-row[data-tip]:focus-visible { background: var(--sunk); }
+.bar-label { min-width: 0; font-size: 0.9375rem; color: var(--ink-2); line-height: 1.3; }
+.bar-row.is-strong .bar-label { color: var(--ink); font-weight: 600; }
+.bar-track {
+  position: relative;
+  height: 0.9rem;
+  background-image: linear-gradient(to right, var(--rule) 1px, transparent 1px);
+  background-size: 25% 100%;
+  border-right: 1px solid var(--rule);
+}
+.bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--mark);
+  border-radius: 0 4px 4px 0;
+}
+.bar-fill.is-accent { background: var(--accent); }
+.bar-value { font: 500 0.875rem/1 var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--ink-2); }
+.bar-row.is-strong .bar-value { color: var(--ink); font-weight: 600; }
+.bar-axis { padding-inline: 0; }
+.bar-axis .ticks { position: relative; height: 1.1rem; font: 400 0.6875rem/1 var(--mono); color: var(--muted); }
+.bar-axis .ticks span { position: absolute; top: 0.2rem; transform: translateX(-50%); white-space: nowrap; }
+.bar-axis .ticks span:first-child { transform: none; }
+.bar-axis .ticks span:last-child { transform: translateX(-100%); }
+
+/* ── Exemples ────────────────────────────────────────── */
+.cases { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
+.case {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.case h3 { font: 600 0.75rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.case blockquote { margin: 0; font-size: 1.0625rem; line-height: 1.5; }
+.case-foot { display: grid; gap: 0.85rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.verdict { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; }
+.verdict-party { font: 750 var(--step-2)/1.1 var(--display); font-stretch: 112%; }
+.verdict-conf { font: 500 0.875rem/1.2 var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.verdict-second { font-size: var(--step--1); color: var(--muted); }
+.case .bars { --label-w: 6.75rem; gap: 0.1rem; }
+.case .bar-row { padding-block: 0.12rem; }
+.case .bar-track { height: 0.6rem; }
+.case .bar-label, .case .bar-value { font-size: 0.75rem; font-family: var(--mono); }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font: 600 0.75rem/1.4 var(--text);
+}
+.chip svg { width: 0.85rem; height: 0.85rem; }
+.copy {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 0.8125rem/1.2 var(--text);
+  cursor: pointer;
+}
+.copy:hover { border-color: var(--ink-2); color: var(--ink); }
+.copy svg { width: 0.9rem; height: 0.9rem; }
+.source-note { font-size: var(--step--1); color: var(--muted); }
+
+/* ── Lancer la démo ──────────────────────────────────── */
+.run-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 2.5rem; align-items: start; }
+.run-steps { display: grid; gap: 1.5rem; min-width: 0; }
+.run-option { display: grid; gap: 0.6rem; min-width: 0; }
+.run-option h3 { font: 600 var(--step-1)/1.3 var(--text); }
+.run-option p { color: var(--ink-2); font-size: 0.9375rem; }
+.cmd {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 0.85rem 0.85rem 1rem;
+  background: var(--sunk);
+  border-radius: 8px;
+  min-width: 0;
+}
+.cmd pre { margin: 0; flex: 1; min-width: 0; overflow-x: auto; font-size: 0.8125rem; line-height: 1.6; }
+.cmd .copy { flex: none; background: var(--surface); }
+.read-list { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.read-list li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.75rem; align-items: start; }
+.read-list .ico {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  background: var(--sunk);
+  color: var(--ink-2);
+}
+.read-list .ico svg { width: 1.05rem; height: 1.05rem; }
+.read-list strong { display: block; font-weight: 600; }
+.read-list span { color: var(--ink-2); font-size: 0.9375rem; }
+.privacy { padding: 1rem 1.1rem; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 8px 8px 0; color: var(--ink-2); font-size: 0.9375rem; }
+
+/* ── Performances ────────────────────────────────────── */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: 3rem 3.5rem; align-items: start; }
+.fig { margin: 0; display: grid; gap: 1rem; min-width: 0; }
+.fig h3 { font: 600 var(--step-1)/1.3 var(--text); }
+.fig-note { font-size: 0.9375rem; color: var(--ink-2); }
+.fig-wide { grid-column: 1 / -1; }
+details.table-view { font-size: 0.875rem; }
+details.table-view summary { cursor: pointer; color: var(--accent-ink); width: fit-content; }
+.data-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { padding: 0.4rem 0.5rem; text-align: right; border-bottom: 1px solid var(--rule); }
+.data-table th:first-child, .data-table td:first-child { text-align: left; }
+.data-table thead th { font: 500 0.75rem/1.3 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.data-table td { font-family: var(--mono); }
+
+.matrix-layout { display: grid; grid-template-columns: minmax(0, auto) minmax(15rem, 1fr); gap: 2rem 3rem; align-items: start; }
+.matrix-scroll { overflow-x: auto; min-width: 0; padding-bottom: 0.25rem; }
+.matrix { border-collapse: separate; border-spacing: 2px; font-variant-numeric: tabular-nums; }
+.matrix-caption { text-align: left; padding-bottom: 0.5rem; }
+.matrix th { font: 500 0.75rem/1.2 var(--mono); color: var(--muted); padding: 0.3rem; }
+.matrix thead th { text-align: center; vertical-align: bottom; }
+.matrix thead th abbr { text-decoration: none; cursor: help; }
+.matrix .corner { text-align: left; font-size: 0.6875rem; line-height: 1.35; }
+.matrix tbody th { text-align: right; padding-right: 0.5rem; }
+.row-btn {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 0.8125rem/1.2 var(--mono);
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.row-btn:hover { background: var(--sunk); color: var(--ink); }
+.row-btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.row-btn .short { display: none; }
+.matrix td {
+  width: 2.9rem;
+  height: 2.5rem;
+  text-align: center;
+  font: 400 0.8125rem/1 var(--mono);
+  color: var(--ink);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--accent) calc(var(--p) * 100%), var(--surface));
+  cursor: default;
+}
+.matrix td.is-diag { font-weight: 600; }
+.matrix tr.is-selected td { box-shadow: inset 0 0 0 2px var(--ink); }
+.ramp { display: grid; gap: 0.35rem; max-width: 18rem; font-size: 0.75rem; color: var(--muted); }
+.ramp-bar { height: 0.6rem; border-radius: 3px; background: linear-gradient(to right, var(--surface), var(--accent)); background: linear-gradient(in oklab to right, var(--surface), var(--accent)); border: 1px solid var(--rule); }
+.ramp-scale { display: flex; justify-content: space-between; font-family: var(--mono); }
+.matrix-read { display: grid; gap: 1rem; padding: 1.25rem; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); min-width: 0; }
+.matrix-read h4 { margin: 0; font: 750 var(--step-2)/1.1 var(--display); font-stretch: 112%; }
+.matrix-read dl { margin: 0; display: grid; gap: 0.75rem; }
+.matrix-read dl div { display: grid; gap: 0.1rem; }
+.matrix-read dt { font-size: var(--step--1); color: var(--muted); }
+.matrix-read dd { margin: 0; color: var(--ink); }
+.matrix-read dd .num { font-weight: 600; }
+
+/* ── Méthode ─────────────────────────────────────────── */
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 1.5rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.steps li { display: grid; align-content: start; gap: 0.5rem; padding-top: 1rem; border-top: 2px solid var(--ink); counter-increment: step; min-width: 0; }
+.steps li::before { content: "Étape " counter(step); font: 500 0.75rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.steps h3 { font: 600 var(--step-1)/1.25 var(--text); }
+.steps p { font-size: 0.9375rem; color: var(--ink-2); }
+.prefix-box { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem 2.5rem; padding: 1.5rem; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); }
+.prefix-box h3 { font: 600 var(--step-1)/1.3 var(--text); margin-bottom: 0.5rem; }
+.prefix-box p { color: var(--ink-2); font-size: 0.9375rem; }
+.prefix-box p + p { margin-top: 0.6rem; }
+.prefix-box code { font-size: 0.875em; color: var(--accent-ink); }
+.tokens { display: flex; flex-wrap: wrap; gap: 0.4rem; align-content: start; }
+.tokens code { padding: 0.25rem 0.5rem; border-radius: 6px; background: var(--sunk); color: var(--ink); font-size: 0.8125rem; }
+.tokens code.is-used { background: var(--accent); color: var(--on-accent); }
+
+/* ── Limites ─────────────────────────────────────────── */
+.limits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1.5rem 2.5rem; margin: 0; padding: 0; list-style: none; }
+.limits li { display: grid; gap: 0.4rem; align-content: start; }
+.limits strong { font-weight: 600; font-size: var(--step-1); line-height: 1.3; }
+.limits span { color: var(--ink-2); font-size: 0.9375rem; }
+
+/* ── Pied de page ────────────────────────────────────── */
+.site-foot { border-top: 1px solid var(--rule); }
+.site-foot .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem 2rem; padding-block: 2rem 2.5rem; font-size: var(--step--1); color: var(--muted); }
+.site-foot a { color: var(--ink-2); }
+
+#tip {
+  position: fixed;
+  z-index: 20;
+  max-width: 17rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: var(--tip-bg);
+  color: var(--tip-ink);
+  font: 400 0.8125rem/1.4 var(--text);
+  pointer-events: none;
+  box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.4);
+}
+
+@media (min-width: 62rem) {
+  .steps { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+@media (max-width: 56rem) {
+  .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 2.25rem; padding-block: 1.5rem 3rem; }
+  .matrix-layout { grid-template-columns: minmax(0, 1fr); }
+  .prefix-box { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 34rem) {
+  .bars { --label-w: 8.5rem; }
+  .matrix td { width: 2.2rem; height: 2.2rem; font-size: 0.75rem; }
+  .matrix th { padding: 0.2rem; }
+  .row-btn { padding: 0.3rem; font-size: 0.75rem; }
+  .row-btn .full { display: none; }
+  .row-btn .short { display: inline; }
+  .block > .wrap { padding-block: 3rem 3.5rem; }
+}
+</style>
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="wordmark" href="#haut" aria-label="Sherlock, haut de page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none"></circle><path d="m15 15 6 6"></path></svg>
+      Sherlock
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <a href="#exemples">Exemples</a>
+      <a href="#essayer">Lancer la démo</a>
+      <a href="#performances">Performances</a>
+      <a href="#methode">Méthode</a>
+      <a href="#limites">Limites</a>
+      <a href="https://github.com/liliandoublet/sherlock">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="haut">
+  <section class="hero" aria-labelledby="titre">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">Classification de textes politiques · CamemBERT</p>
+        <h1 id="titre">Quel parti se cache derrière ce texte&nbsp;?</h1>
+        <p class="lead">Sherlock lit un tweet ou un extrait de site officiel et estime lequel de 8 partis français l'a écrit. Il a appris le style et le vocabulaire de 14&#8239;696 textes publiés entre 2019 et 2025.</p>
+        <dl class="facts">
+          <div class="is-key"><dt>F1 macro de Sherlock</dt><dd data-fill="f1-demo">—</dd></div>
+          <div><dt>Baseline TF-IDF</dt><dd data-fill="f1-baseline">—</dd></div>
+          <div><dt>Réponse au hasard</dt><dd data-fill="chance">—</dd></div>
+        </dl>
+        <p class="specimen-note">Mesuré sur <span data-fill="n-test">1&#8239;470</span> textes que le modèle n'a jamais vus.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#essayer">Lancer la démo</a>
+          <a class="btn" href="https://github.com/liliandoublet/sherlock">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"></path></svg>
+            Voir le code
+          </a>
+        </div>
+      </div>
+
+      <figure class="specimen" aria-labelledby="specimen-titre">
+        <p class="eyebrow" id="specimen-titre">Ce que lit le modèle</p>
+        <p class="specimen-in"><span class="tok">[NOIRONY] [SENT_neutre]</span> <span data-fill="hero-text">Nous voulons la retraite à 60 ans, le blocage des prix de l'énergie et une VIe République pour redonner le pouvoir au peuple.</span></p>
+        <p class="specimen-flow">ce qu'il répond</p>
+        <div id="hero-out"></div>
+        <p class="specimen-note" id="hero-note">Le modèle répartit 100&nbsp;% de probabilité entre les 8 partis. La démo affiche le plus probable, sa confiance et la deuxième hypothèse.</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="block" id="exemples" aria-labelledby="exemples-titre">
+    <div class="wrap">
+      <div class="block-head">
+        <p class="eyebrow">Les exemples de la démo</p>
+        <h2 id="exemples-titre">Six phrases pour le mettre à l'épreuve</h2>
+        <p>Ces phrases ont été écrites pour la démo : aucun texte du corpus n'est republié. Elles montrent comment le modèle réagit, pas sa précision. Il se trompe aussi, surtout entre partis proches.</p>
+      </div>
+      <div class="cases" id="cases"></div>
+      <p class="source-note" id="cases-note"></p>
+    </div>
+  </section>
+
+  <section class="block" id="essayer" aria-labelledby="essayer-titre">
+    <div class="wrap">
+      <div class="block-head">
+        <p class="eyebrow">Démo Streamlit</p>
+        <h2 id="essayer-titre">Lancer la démo sur ton ordinateur</h2>
+        <p>Colle n'importe quel texte politique en français : tweet, communiqué, extrait de discours. Au premier lancement, le modèle (environ 420&nbsp;Mo) est téléchargé depuis Hugging Face.</p>
+      </div>
+      <div class="run-grid">
+        <div class="run-steps">
+          <div class="run-option">
+            <h3>Avec Docker</h3>
+            <p>Le plus simple : rien d'autre à installer.</p>
+            <div class="cmd"><pre><code>docker run -p 8501:8501 -v sherlock_hf:/root/.cache/huggingface ghcr.io/liliandoublet/sherlock:latest</code></pre></div>
+          </div>
+          <div class="run-option">
+            <h3>Avec uv</h3>
+            <p>Depuis le code source. L'installation télécharge PyTorch (plusieurs Go).</p>
+            <div class="cmd"><pre><code>git clone https://github.com/liliandoublet/sherlock &amp;&amp; cd sherlock
+uv run --extra demo streamlit run app/streamlit_app.py</code></pre></div>
+          </div>
+          <p class="fig-note">Puis ouvre <a href="http://localhost:8501">http://localhost:8501</a>.</p>
+          <p class="privacy">Le modèle tourne sur ta machine. Le texte que tu saisis n'est ni enregistré ni envoyé à un service tiers.</p>
+        </div>
+        <div class="run-option">
+          <h3>Lire le résultat</h3>
+          <ul class="read-list">
+            <li>
+              <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg></span>
+              <div><strong>Parti le plus probable et confiance</strong><span>La probabilité que le modèle donne à sa réponse, avec la deuxième hypothèse juste en dessous.</span></div>
+            </li>
+            <li>
+              <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg></span>
+              <div><strong>« Le modèle hésite »</strong><span>Sous <span data-fill="hesitation">40&nbsp;%</span> de confiance, la démo ne tranche pas et donne les deux pistes. Le texte ne contient pas de signal assez net.</span></div>
+            </li>
+            <li>
+              <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h9"></path></svg></span>
+              <div><strong>Longueur du texte</strong><span>Moins de <span data-fill="min-words">5</span> mots : résultat peu fiable. Au-delà d'environ <span data-fill="max-words">350</span> mots (512 tokens), la fin du texte est ignorée.</span></div>
+            </li>
+            <li>
+              <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg></span>
+              <div><strong>Le parti de l'auteur</strong><span>Le modèle devine qui a écrit le texte, d'après le style et le vocabulaire. Il ne juge ni la position idéologique, ni la véracité.</span></div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="performances" aria-labelledby="perf-titre">
+    <div class="wrap">
+      <div class="block-head">
+        <p class="eyebrow">Performances</p>
+        <h2 id="perf-titre">Ce que valent ses réponses</h2>
+        <p>Score F1 macro sur <span data-fill="n-test">1&#8239;470</span> textes de test que le modèle n'a jamais vus, avec autant de textes pour chaque parti. 100&nbsp;% serait parfait ; répondre au hasard donne <span data-fill="chance">12,5&nbsp;%</span>.</p>
+      </div>
+      <div class="figs" id="figs">
+        <figure class="fig">
+          <h3>Face aux références</h3>
+          <div id="fig-compare"></div>
+          <p class="fig-note" id="note-compare"></p>
+        </figure>
+        <figure class="fig">
+          <h3>Selon le type de texte</h3>
+          <div id="fig-media"></div>
+          <p class="fig-note">Les tweets, beaucoup plus courts, donnent moins d'indices que les extraits de sites officiels.</p>
+        </figure>
+        <figure class="fig">
+          <h3>Selon le parti</h3>
+          <div id="fig-party"></div>
+          <details class="table-view">
+            <summary>Voir le tableau : précision, rappel, F1</summary>
+            <div id="table-party"></div>
+          </details>
+        </figure>
+        <figure class="fig fig-wide">
+          <h3>Qui est confondu avec qui</h3>
+          <p class="fig-note">Chaque ligne est le vrai parti de l'auteur, chaque colonne la réponse du modèle. Plus une case est foncée, plus elle reçoit de textes de ce parti. Choisis un parti pour lire ses confusions.</p>
+          <div class="matrix-layout">
+            <div class="matrix-scroll" id="fig-matrix"></div>
+            <div class="matrix-read" id="matrix-read" aria-live="polite"></div>
+          </div>
+          <div class="ramp" aria-hidden="true">
+            <span>Part des textes du parti (ligne)</span>
+            <div class="ramp-bar"></div>
+            <div class="ramp-scale"><span>0&nbsp;%</span><span>50&nbsp;%</span><span>100&nbsp;%</span></div>
+          </div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="methode" aria-labelledby="methode-titre">
+    <div class="wrap">
+      <div class="block-head">
+        <p class="eyebrow">Méthode</p>
+        <h2 id="methode-titre">Comment il a été construit</h2>
+        <p>Un pipeline reproductible, de la collecte des textes à l'image Docker de la démo. Chaque entraînement et chaque évaluation sont suivis dans MLflow.</p>
+      </div>
+      <ol class="steps">
+        <li><h3>Collecte</h3><p>11&#8239;136 tweets de 24 comptes de personnalités politiques et 3&#8239;560 extraits de sites officiels, de septembre 2019 à mai 2025.</p></li>
+        <li><h3>Nettoyage</h3><p>Expressions régulières pour les tweets (liens, mentions, hashtags) ; Gemini pour les pages web, trop irrégulières pour des règles fixes.</p></li>
+        <li><h3>Annotation</h3><p>Sentiment (positif, neutre, négatif) et ironie ajoutés par Gemini 2.0 Flash. Corpus équilibré entre les 8 partis.</p></li>
+        <li><h3>Fine-tuning</h3><p><code>camembert-base</code> réentraîné sur 11&#8239;756 textes : AdamW, taux d'apprentissage 2e-5, 4 epochs, fp16.</p></li>
+        <li><h3>Évaluation et livraison</h3><p>Test sur 1&#8239;470 textes jamais vus, comparaison à une baseline TF-IDF. Lint et tests à chaque push, image Docker à chaque version.</p></li>
+      </ol>
+      <div class="prefix-box">
+        <div>
+          <h3>Le préfixe d'entrée</h3>
+          <p>Le modèle a appris avec le sentiment et l'ironie écrits en tête de chaque texte, sous forme de jetons spéciaux.</p>
+          <p id="prefix-note">Dans la démo, ces annotations ne sont pas connues d'avance : le texte reçoit le préfixe neutre <code>[NOIRONY] [SENT_neutre]</code>.</p>
+        </div>
+        <div class="tokens" aria-label="Jetons possibles">
+          <code class="is-used">[NOIRONY]</code><code>[IRONY]</code><code>[SENT_négatif]</code><code class="is-used">[SENT_neutre]</code><code>[SENT_positif]</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="limites" aria-labelledby="limites-titre">
+    <div class="wrap">
+      <div class="block-head">
+        <p class="eyebrow">Limites</p>
+        <h2 id="limites-titre">Ce qu'il ne sait pas faire</h2>
+      </div>
+      <ul class="limits">
+        <li><strong>Il se trompe souvent entre partis proches.</strong><span>LR et RN, PS et PCF, RN et Reconquête : c'est là que se concentrent les erreurs. Au total, il se trompe sur <span data-fill="error-rate">près de 4 textes sur 10</span>.</span></li>
+        <li><strong>Il connaît un registre étroit.</strong><span>24 comptes et les sites officiels des partis. Sur la presse, les forums ou la conversation, il généralise mal. Sentiment et ironie ont été annotés par un LLM, sans validation humaine systématique.</span></li>
+        <li><strong>Ce n'est pas un outil de profilage.</strong><span>Les opinions politiques sont une donnée sensible. Ne l'utilise pas pour deviner les opinions d'une personne réelle.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>Sherlock <span data-fill="version"></span> · Lilian Doublet, Master Data Analytics, Intelligence et Sécurité, Rennes School of Business</span>
+    <span>Licence MIT · <a href="https://github.com/liliandoublet/sherlock">Code, données et méthode sur GitHub</a></span>
+  </div>
+</footer>
+
+<div id="tip" role="tooltip" hidden></div>
+
+<!-- Données générées par `make site` (sherlock site) depuis reports/ : ne pas modifier à la main. -->
+<script id="sherlock-data" type="application/json">{"version":"0.3.0","thresholds":{"hesitation":0.4,"min_words":5,"max_words":350},"runs":{"legacy_v6_public_input":{"n":1470,"accuracy":0.6238095238095238,"f1_macro":0.6256238404164468,"by_media":{"Twitter":0.591413258164082,"site_web":0.732674523938567},"labels":["EELV","LFI","LR","PCF","PS","RN","Reconquête","Renaissance"],"per_party":{"EELV":{"precision":0.7142857142857143,"recall":0.546448087431694,"f1":0.6191950464396285,"support":183},"LFI":{"precision":0.6153846153846154,"recall":0.5652173913043478,"f1":0.5892351274787535,"support":184},"LR":{"precision":0.5469387755102041,"recall":0.7243243243243244,"f1":0.6232558139534884,"support":185},"PCF":{"precision":0.5686274509803921,"recall":0.6338797814207651,"f1":0.599483204134367,"support":183},"PS":{"precision":0.6287425149700598,"recall":0.5706521739130435,"f1":0.5982905982905983,"support":184},"RN":{"precision":0.52,"recall":0.6358695652173914,"f1":0.5721271393643031,"support":184},"Reconquête":{"precision":0.7721518987341772,"recall":0.6666666666666666,"f1":0.7155425219941349,"support":183},"Renaissance":{"precision":0.7345679012345679,"recall":0.6467391304347826,"f1":0.6878612716763006,"support":184}},"confusion_matrix":[[100,14,6,19,12,10,12,10],[12,104,8,24,6,17,11,2],[0,4,134,2,14,21,2,8],[7,17,10,116,15,14,1,3],[12,11,15,22,105,8,1,10],[3,5,34,12,4,117,7,2],[3,8,10,3,1,28,122,8],[3,6,28,6,10,10,2,119]]},"legacy_v6_meta":{"n":1470,"accuracy":0.6258503401360545,"f1_macro":0.6272758576591817,"by_media":{"Twitter":0.5942206796029998,"site_web":0.7304152024447024},"labels":["EELV","LFI","LR","PCF","PS","RN","Reconquête","Renaissance"],"per_party":{"EELV":{"precision":0.7112676056338029,"recall":0.5519125683060109,"f1":0.6215384615384615,"support":183},"LFI":{"precision":0.6057142857142858,"recall":0.5760869565217391,"f1":0.5905292479108635,"support":184},"LR":{"precision":0.5512820512820513,"recall":0.6972972972972973,"f1":0.6157517899761337,"support":185},"PCF":{"precision":0.6,"recall":0.639344262295082,"f1":0.6190476190476191,"support":183},"PS":{"precision":0.6296296296296297,"recall":0.5543478260869565,"f1":0.5895953757225434,"support":184},"RN":{"precision":0.5175438596491229,"recall":0.6413043478260869,"f1":0.5728155339805825,"support":184},"Reconquête":{"precision":0.7543859649122807,"recall":0.7049180327868853,"f1":0.7288135593220338,"support":183},"Renaissance":{"precision":0.7239263803680982,"recall":0.6413043478260869,"f1":0.6801152737752162,"support":184}},"confusion_matrix":[[101,15,6,17,12,10,12,10],[12,106,8,20,5,18,12,3],[1,5,129,2,13,25,2,8],[7,15,9,117,15,16,1,3],[12,13,17,21,102,8,1,10],[3,7,28,10,4,118,11,3],[2,7,9,3,1,24,129,8],[4,7,28,5,10,9,3,118]]},"tfidf_logreg":{"n":1470,"accuracy":0.5700680272108843,"f1_macro":0.56950959598949,"by_media":{"Twitter":0.5545299130131862,"site_web":0.615088456901097},"labels":["EELV","LFI","LR","PCF","PS","RN","Reconquête","Renaissance"],"per_party":{"EELV":{"precision":0.5654761904761905,"recall":0.5191256830601093,"f1":0.5413105413105413,"support":183},"LFI":{"precision":0.5463917525773195,"recall":0.5760869565217391,"f1":0.5608465608465608,"support":184},"LR":{"precision":0.5591397849462365,"recall":0.5621621621621622,"f1":0.5606469002695418,"support":185},"PCF":{"precision":0.49230769230769234,"recall":0.5245901639344263,"f1":0.5079365079365079,"support":183},"PS":{"precision":0.5949367088607594,"recall":0.5108695652173914,"f1":0.5497076023391813,"support":184},"RN":{"precision":0.554945054945055,"recall":0.5489130434782609,"f1":0.5519125683060109,"support":184},"Reconquête":{"precision":0.6410256410256411,"recall":0.6830601092896175,"f1":0.6613756613756614,"support":183},"Renaissance":{"precision":0.609375,"recall":0.6358695652173914,"f1":0.6223404255319149,"support":184}},"confusion_matrix":[[95,16,9,20,8,8,13,14],[15,106,5,22,9,11,12,4],[6,9,104,8,16,19,13,10],[15,18,9,96,15,11,6,13],[18,19,8,17,94,10,5,13],[7,14,20,10,4,101,16,12],[2,8,14,5,5,15,125,9],[10,4,17,17,7,7,5,117]]}},"examples":[{"label":"Retraite à 60 ans","text":"Nous voulons la retraite à 60 ans, le blocage des prix de l'énergie et une VIe République pour redonner le pouvoir au peuple.","scores":null},{"label":"Nationalisations","text":"Nationalisons les grands services publics et augmentons les salaires : le travail doit mieux payer que le capital.","scores":null},{"label":"Europe solidaire","text":"La gauche de gouvernement doit protéger les services publics tout en construisant une Europe plus solidaire et une transition juste.","scores":null},{"label":"Identité et sécurité","text":"Il faut défendre l'identité française, exiger l'assimilation et rétablir la sécurité dans nos quartiers.","scores":null},{"label":"Immigration (cas limite)","text":"Il faut maîtriser l'immigration, défendre nos frontières et instaurer la priorité nationale pour les Français.","scores":null},{"label":"Sans signal politique","text":"Merci à toutes et à tous pour votre présence ce soir, belle soirée !","scores":null}],"examples_model":null}</script>
+
+<script>
+(() => {
+  "use strict";
+
+  let DATA = {};
+  try { DATA = JSON.parse(document.getElementById("sherlock-data").textContent || "{}"); } catch (e) { DATA = {}; }
+  const RUNS = DATA.runs || {};
+  const RUN = RUNS.legacy_v6_public_input;
+  const TH = DATA.thresholds || { hesitation: 0.4, min_words: 5, max_words: 350 };
+
+  // ── Formats français ─────────────────────────────────
+  const NNBSP = " ";
+  const pct = (v, d = 1) => (v * 100).toFixed(d).replace(".", ",") + NNBSP + "%";
+  const int = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, NNBSP);
+  const dec = (v, d = 3) => v.toFixed(d).replace(".", ",");
+  const SHORT = { "Reconquête": "REC", "Renaissance": "REN" };
+  const MEDIA = { Twitter: "Tweets", site_web: "Extraits de sites officiels" };
+
+  function h(tag, props, ...kids) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props || {})) {
+      if (value == null || value === false) continue;
+      if (key === "class") node.className = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : value);
+    }
+    for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) node.append(kid);
+    return node;
+  }
+  const fill = (name, text) =>
+    document.querySelectorAll(`[data-fill="${name}"]`).forEach((n) => { n.textContent = text; });
+
+  const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h8"></path></svg>';
+  const ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6M12 17h.01"></path></svg>';
+
+  // ── Copier ───────────────────────────────────────────
+  function copyButton(getText, label = "Copier") {
+    const btn = h("button", { type: "button", class: "copy" });
+    btn.innerHTML = ICON_COPY;
+    const text = h("span", null, label);
+    btn.append(text);
+    btn.addEventListener("click", () => {
+      const value = getText();
+      const done = () => { text.textContent = "Copié"; setTimeout(() => { text.textContent = label; }, 1600); };
+      const fallback = () => {
+        const target = btn.closest(".cmd")?.querySelector("code") || btn.closest(".case")?.querySelector("blockquote");
+        if (target) { const range = document.createRange(); range.selectNodeContents(target); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+        text.textContent = "Texte sélectionné";
+        setTimeout(() => { text.textContent = label; }, 2200);
+      };
+      try { navigator.clipboard.writeText(value).then(done, fallback); } catch (e) { fallback(); }
+    });
+    return btn;
+  }
+  document.querySelectorAll(".cmd").forEach((cmd) => {
+    const code = cmd.querySelector("code");
+    cmd.append(copyButton(() => code.textContent));
+  });
+
+  // ── Info-bulle (survol, focus clavier, toucher) ─────
+  const tip = document.getElementById("tip");
+  function showTip(target) {
+    tip.textContent = target.dataset.tip;
+    tip.hidden = false;
+    const r = target.getBoundingClientRect();
+    const t = tip.getBoundingClientRect();
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), innerWidth - t.width - 8);
+    let top = r.top - t.height - 8;
+    if (top < 8) top = r.bottom + 8;
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+  document.addEventListener("pointerover", (e) => { const t = e.target.closest("[data-tip]"); t ? showTip(t) : hideTip(); });
+  document.addEventListener("focusin", (e) => { const t = e.target.closest("[data-tip]"); t ? showTip(t) : hideTip(); });
+  document.addEventListener("focusout", hideTip);
+  addEventListener("scroll", hideTip, { passive: true });
+
+  // ── Barres horizontales, échelle 0-100 % ─────────────
+  function bars(rows, { axis = false } = {}) {
+    const list = h("div", { class: "bars", role: "list" },
+      rows.map((r) => h("div", {
+          class: "bar-row" + (r.strong ? " is-strong" : ""),
+          role: "listitem",
+          tabindex: r.tip ? "0" : null,
+          "data-tip": r.tip || null,
+          "aria-label": r.aria || null,
+        },
+        h("span", { class: "bar-label" }, r.label),
+        h("span", { class: "bar-track", "aria-hidden": "true" },
+          h("span", { class: "bar-fill" + (r.accent ? " is-accent" : ""), style: `width:${(Math.min(1, r.value) * 100).toFixed(2)}%` })),
+        h("span", { class: "bar-value" }, r.text || "")
+      )));
+    if (axis) {
+      list.append(h("div", { class: "bar-axis", "aria-hidden": "true" }, h("span"),
+        h("span", { class: "ticks" }, [0, 0.25, 0.5, 0.75, 1].map((v) => h("span", { style: `left:${v * 100}%` }, pct(v, 0)))),
+        h("span")));
+    }
+    return list;
+  }
+
+  function ranked(scores) { return Object.entries(scores).sort((a, b) => b[1] - a[1]); }
+
+  function probabilityBars(scores) {
+    const order = ranked(scores);
+    return bars(order.map(([party, score], i) => ({
+      label: party,
+      value: score,
+      accent: i === 0,
+      strong: i === 0,
+      text: i < 2 ? pct(score, 0) : "",
+      tip: `${party} : ${pct(score)}`,
+      aria: `${party} : ${pct(score)}`,
+    })));
+  }
+
+  // ── Chiffres clés ────────────────────────────────────
+  fill("version", DATA.version ? "v" + DATA.version : "");
+  fill("hesitation", pct(TH.hesitation, 0));
+  fill("min-words", String(TH.min_words));
+  fill("max-words", String(TH.max_words));
+  if (RUN) {
+    const n = RUN.labels.length;
+    fill("f1-demo", pct(RUN.f1_macro));
+    fill("chance", pct(1 / n));
+    fill("n-test", int(RUN.n));
+    fill("error-rate", `${pct(1 - RUN.accuracy, 0)} des textes de test`);
+    if (RUNS.legacy_v6_meta) {
+      document.getElementById("prefix-note").append(
+        ` Le score change à peine : ${pct(RUN.f1_macro)} avec le préfixe neutre, ${pct(RUNS.legacy_v6_meta.f1_macro)} avec les vraies annotations.`);
+    }
+  }
+  if (RUNS.tfidf_logreg) fill("f1-baseline", pct(RUNS.tfidf_logreg.f1_macro));
+
+  // ── Hero : la pièce analysée ─────────────────────────
+  const examples = DATA.examples || [];
+  const heroOut = document.getElementById("hero-out");
+  const first = examples[0];
+  if (first && first.scores) {
+    fill("hero-text", first.text);
+    heroOut.append(probabilityBars(first.scores));
+    document.getElementById("hero-note").textContent =
+      `Réponse réelle du modèle${DATA.examples_model ? " (" + DATA.examples_model + ")" : ""} pour cette phrase, dans les conditions de la démo.`;
+  } else {
+    const parties = RUN ? RUN.labels : ["EELV", "LFI", "LR", "PCF", "PS", "RN", "Reconquête", "Renaissance"];
+    heroOut.append(h("div", { class: "suspects" }, parties.map((p) => h("span", { class: "suspect" }, p, h("span", null, "?" + NNBSP + "%")))));
+  }
+
+  // ── Exemples ─────────────────────────────────────────
+  const cases = document.getElementById("cases");
+  for (const ex of examples) {
+    const foot = h("div", { class: "case-foot" });
+    if (ex.scores) {
+      const [[top, topScore], [second, secondScore]] = ranked(ex.scores);
+      const hesitates = topScore < TH.hesitation;
+      foot.append(
+        h("p", { class: "eyebrow" }, hesitates ? "Piste la plus probable" : "Parti le plus probable"),
+        h("div", { class: "verdict" },
+          h("span", { class: "verdict-party" }, top),
+          h("span", { class: "verdict-conf" }, "confiance " + pct(topScore, 0))),
+        h("p", { class: "verdict-second" }, `Deuxième hypothèse : ${second} (${pct(secondScore)})`));
+      if (hesitates) {
+        const chip = h("span", { class: "chip" });
+        chip.innerHTML = ICON_WARN;
+        chip.append("Le modèle hésite");
+        foot.append(chip);
+      }
+      foot.append(probabilityBars(ex.scores));
+    } else {
+      foot.append(h("p", { class: "verdict-second" }, "À coller dans la démo pour voir la réponse du modèle."));
+    }
+    foot.append(copyButton(() => ex.text, "Copier la phrase"));
+    cases.append(h("article", { class: "case" },
+      h("h3", null, ex.label),
+      h("blockquote", null, "«" + " " + ex.text + " " + "»"),
+      foot));
+  }
+  const answered = examples.some((ex) => ex.scores);
+  document.getElementById("cases-note").textContent = answered
+    ? `Probabilités calculées par le modèle${DATA.examples_model ? " " + DATA.examples_model : ""}, avec le préfixe neutre de la démo (sentiment neutre, sans ironie).`
+    : "Copie une phrase, colle-la dans la démo et compare ta propre intuition à celle du modèle.";
+
+  // ── Performances ─────────────────────────────────────
+  if (!RUN) {
+    document.getElementById("figs").replaceChildren(h("p", { class: "fig-note" }, "Métriques absentes : lance make site après make all."));
+    return;
+  }
+  const n = RUN.labels.length;
+
+  const compare = [
+    { label: `Hasard (1 chance sur ${n})`, value: 1 / n, tip: "Réponse tirée au sort parmi les 8 partis" },
+    RUNS.tfidf_logreg && { label: "Baseline TF-IDF + régression logistique", value: RUNS.tfidf_logreg.f1_macro, tip: `Accuracy ${pct(RUNS.tfidf_logreg.accuracy)} · F1 macro ${dec(RUNS.tfidf_logreg.f1_macro)}` },
+    { label: "Sherlock, conditions de la démo", value: RUN.f1_macro, accent: true, strong: true, tip: `Accuracy ${pct(RUN.accuracy)} · F1 macro ${dec(RUN.f1_macro)}` },
+    RUNS.legacy_v6_meta && { label: "Sherlock avec sentiment et ironie annotés", value: RUNS.legacy_v6_meta.f1_macro, tip: `Accuracy ${pct(RUNS.legacy_v6_meta.accuracy)} · F1 macro ${dec(RUNS.legacy_v6_meta.f1_macro)}` },
+  ].filter(Boolean).map((r) => ({ ...r, text: pct(r.value) }));
+  document.getElementById("fig-compare").append(bars(compare, { axis: true }));
+  if (RUNS.tfidf_logreg) {
+    const gain = (RUN.f1_macro - RUNS.tfidf_logreg.f1_macro) * 100;
+    document.getElementById("note-compare").textContent =
+      `Le fine-tuning de CamemBERT apporte ${gain.toFixed(1).replace(".", ",")} points sur la baseline, qui ne regarde que la fréquence des mots.`;
+  }
+
+  const media = Object.entries(RUN.by_media || {}).map(([key, value]) => ({
+    label: MEDIA[key] || key, value, accent: true, text: pct(value), tip: `${MEDIA[key] || key} : F1 macro ${dec(value)}`,
+  }));
+  document.getElementById("fig-media").append(bars(media, { axis: true }));
+
+  const parties = Object.entries(RUN.per_party).sort((a, b) => b[1].f1 - a[1].f1);
+  document.getElementById("fig-party").append(bars(parties.map(([party, s]) => ({
+    label: party, value: s.f1, accent: true, text: pct(s.f1),
+    tip: `${party} : précision ${pct(s.precision)} · rappel ${pct(s.recall)} · ${s.support} textes`,
+  })), { axis: true }));
+  document.getElementById("table-party").append(h("table", { class: "data-table" },
+    h("thead", null, h("tr", null, ["Parti", "Précision", "Rappel", "F1", "Textes"].map((c) => h("th", { scope: "col" }, c)))),
+    h("tbody", null, parties.map(([party, s]) => h("tr", null,
+      h("td", null, party), h("td", null, pct(s.precision)), h("td", null, pct(s.recall)), h("td", null, pct(s.f1)), h("td", null, String(s.support)))))));
+
+  // ── Matrice de confusion ─────────────────────────────
+  const labels = RUN.labels;
+  const cm = RUN.confusion_matrix;
+  const rowSum = cm.map((row) => row.reduce((a, b) => a + b, 0));
+  const colSum = labels.map((_, j) => cm.reduce((a, row) => a + row[j], 0));
+
+  const rowButtons = [];
+  const rowsEls = [];
+  const table = h("table", { class: "matrix" },
+    h("caption", { class: "eyebrow matrix-caption" }, `Matrice de confusion · ${int(RUN.n)} textes de test`),
+    h("thead", null, h("tr", null,
+      h("th", { class: "corner", scope: "col" }, "Vrai ↓", h("br"), "Prédit →"),
+      labels.map((l) => h("th", { scope: "col" }, SHORT[l] ? h("abbr", { title: l }, SHORT[l]) : l)))),
+    h("tbody", null, labels.map((l, i) => {
+      const btn = h("button", { type: "button", class: "row-btn", "aria-pressed": "false", "aria-label": l, onclick: () => select(i) },
+        h("span", { class: "full" }, l), h("span", { class: "short", "aria-hidden": "true" }, SHORT[l] || l));
+      rowButtons.push(btn);
+      const tr = h("tr", null, h("th", { scope: "row" }, btn),
+        cm[i].map((v, j) => h("td", {
+          class: i === j ? "is-diag" : null,
+          style: `--p:${(v / rowSum[i]).toFixed(4)}`,
+          "data-tip": `Écrit par ${l}, attribué à ${labels[j]} : ${v} textes sur ${rowSum[i]} (${pct(v / rowSum[i])})`,
+        }, String(v))));
+      rowsEls.push(tr);
+      return tr;
+    })));
+  document.getElementById("fig-matrix").append(table);
+
+  const read = document.getElementById("matrix-read");
+  function select(i) {
+    rowButtons.forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
+    rowsEls.forEach((tr, k) => tr.classList.toggle("is-selected", k === i));
+    const row = cm[i];
+    const confusions = row.map((v, j) => [labels[j], v]).filter((_, j) => j !== i).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    read.replaceChildren(
+      h("p", { class: "eyebrow" }, "Textes écrits par"),
+      h("h4", null, labels[i]),
+      h("dl", null,
+        h("div", null, h("dt", null, "Bien attribués"),
+          h("dd", null, h("span", { class: "num" }, `${row[i]} sur ${rowSum[i]}`), ` (${pct(row[i] / rowSum[i])})`)),
+        h("div", null, h("dt", null, "Confusions les plus fréquentes"),
+          h("dd", null, confusions.map(([p, v], k) => [k ? ", " : "", p, " ", h("span", { class: "num" }, `(${v})`)]))),
+        h("div", null, h("dt", null, `Quand Sherlock répond ${labels[i]}`),
+          h("dd", null, "il a raison ", h("span", { class: "num" }, pct(cm[i][i] / colSum[i])), " du temps."))));
+  }
+  // Par défaut : la ligne qui contient la plus grosse confusion
+  let start = 0, worst = -1;
+  cm.forEach((row, i) => row.forEach((v, j) => { if (i !== j && v > worst) { worst = v; start = i; } }));
+  select(start);
+})();
+</script>
+</body>
+</html>

@@ -52,6 +52,7 @@ de sites officiels (textes beaucoup plus courts).
 - **Modèle** : `camembert-base` fine-tuné (AdamW, lr 2e-5, 4 epochs, fp16), hyperparamètres dans [`params.yaml`](params.yaml).
 - **MLflow** : chaque entraînement et chaque évaluation enregistre paramètres, courbes par epoch, métriques par média et commit git. → [docs/reproduce.md](docs/reproduce.md#suivi-des-expériences-mlflow)
 - **CI/CD** : GitHub Actions lance lint et tests à chaque push ; à chaque tag `vX.Y.Z`, une Release et l'image Docker de la démo sont publiées. → [docs/ci-cd.md](docs/ci-cd.md)
+- **Site vitrine** : [`site/index.html`](site/index.html), page statique (exemples, performances, matrice de confusion interactive) publiée sur GitHub Pages ; ses chiffres sont injectés depuis `reports/` par `make site`. → [docs/ci-cd.md](docs/ci-cd.md#site-vitrine--github-pages)
 - **Tests** : unitaires, dont un entraînement complet sur un mini-CamemBERT et l'appli Streamlit.
 
 ## Reproduire
@@ -61,6 +62,7 @@ make install    # dépendances (GPU NVIDIA recommandé pour l'entraînement)
 make all        # données, évaluation du modèle historique V6, baseline, tableaux
 make train      # fine-tuning CamemBERT (~10 min sur RTX 3060 Ti)
 make mlflow     # suivi des expériences : http://localhost:5000
+make site       # met à jour le site vitrine ; aperçu : make site-serve
 ```
 
 Fichiers requis, commandes détaillées et dépannage : [docs/reproduce.md](docs/reproduce.md).
