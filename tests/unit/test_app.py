@@ -76,3 +76,14 @@ def test_missing_model_shows_help_not_traceback(tmp_path, monkeypatch):
 def test_performance_tab_reads_versioned_metrics(app):
     """Les métriques de reports/ sont versionnées : l'onglet doit afficher ses graphiques."""
     assert len(app.get("plotly_chart")) >= 2
+
+
+def test_hosted_demo_says_text_goes_to_the_server(tmp_path, monkeypatch):
+    """En ligne, l'onglet À propos ne doit pas prétendre que tout reste sur la machine."""
+    monkeypatch.setenv("SHERLOCK_MODEL", str(save_tiny_model(tmp_path / "model")))
+    monkeypatch.setenv("SHERLOCK_HOSTED", "1")
+    at = AppTest.from_file(str(APP), default_timeout=120)
+    at.run()
+    about = " ".join(md.value for md in at.markdown)
+    assert "serveur Hugging Face" in about
+    assert "s'exécute sur ta machine" not in about

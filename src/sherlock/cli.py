@@ -326,6 +326,32 @@ def site_cmd(
     )
 
 
+# ── Commande : publish-space ──────────────────────────────────────────────────
+
+
+@app.command("publish-space")
+def publish_space_cmd(
+    space: str | None = typer.Option(
+        None, "--space", help="Space cible (utilisateur/nom). Par défaut : demo.space."
+    ),
+    private: bool = typer.Option(False, "--private", help="Crée le Space en privé."),
+    build_dir: Path = typer.Option(Path("build/space"), "--build-dir"),
+):
+    """Met la démo en ligne sur un Space Hugging Face (nécessite `hf auth login`)."""
+    from sherlock.config import cfg
+    from sherlock.space import publish_space, stage_space
+
+    space = space or cfg.demo.space
+    if not space:
+        console.print("[red]Aucun Space : renseigner demo.space dans params.yaml ou --space.[/red]")
+        raise typer.Exit(1)
+
+    stage_space(build_dir)
+    url = publish_space(space, build_dir, private=private)
+    console.print(f"[green]Démo publiée : {url}[/green]")
+    console.print("[dim]Le Space se construit en quelques minutes (onglet Logs).[/dim]")
+
+
 @dataset_app.command("import-legacy")
 def dataset_import_legacy(
     src_dir: Path = typer.Argument(

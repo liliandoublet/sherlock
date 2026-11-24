@@ -25,6 +25,14 @@ ACCENT = "#2a78d6"  # barre mise en évidence
 NEUTRAL = "#8d8c86"  # autres barres ; ≥ 3:1 sur fond clair et sombre
 SENTIMENTS = ["négatif", "neutre", "positif"]
 GITHUB = "https://github.com/liliandoublet/sherlock"
+HOSTED = os.environ.get("SHERLOCK_HOSTED") == "1"  # démo en ligne (Space Hugging Face)
+PRIVACY = (
+    "La démo tourne sur un serveur Hugging Face : le texte que tu saisis y est envoyé pour "
+    "l'analyse, mais l'appli ne l'enregistre pas."
+    if HOSTED
+    else "Le modèle s'exécute sur ta machine. Le texte que tu saisis n'est ni enregistré ni "
+    "envoyé à un service tiers ; seul le téléchargement initial du modèle utilise Internet."
+)
 
 st.set_page_config(page_title="Sherlock", page_icon="🔍", layout="centered")
 
@@ -347,8 +355,7 @@ style et son vocabulaire. Il ne mesure ni la position idéologique d'un texte, n
 - Les opinions politiques sont une donnée sensible : n'utilise pas cet outil pour profiler une
   personne réelle.
 
-**Vie privée.** Le modèle s'exécute sur ta machine. Le texte que tu saisis n'est ni enregistré ni
-envoyé à un service tiers ; seul le téléchargement initial du modèle utilise Internet.
+**Vie privée.** {PRIVACY}
 
 **Code, données et méthode** : [{GITHUB}]({GITHUB})
 """

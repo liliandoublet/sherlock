@@ -99,6 +99,7 @@ def build_site_data(
 
     return {
         "version": cfg.project.version,
+        "demo_url": f"https://huggingface.co/spaces/{cfg.demo.space}" if cfg.demo.space else None,
         "thresholds": {"hesitation": HESITATION, "min_words": MIN_WORDS, "max_words": MAX_WORDS},
         "runs": load_runs(reports_dir / "metrics"),
         "examples": [

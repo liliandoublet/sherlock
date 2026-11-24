@@ -490,7 +490,7 @@ details.table-view summary { cursor: pointer; color: var(--accent-ink); width: f
     </a>
     <nav class="site-nav" aria-label="Sections">
       <a href="#exemples">Exemples</a>
-      <a href="#essayer">Lancer la démo</a>
+      <a href="#essayer">Essayer</a>
       <a href="#performances">Performances</a>
       <a href="#methode">Méthode</a>
       <a href="#limites">Limites</a>
@@ -513,7 +513,7 @@ details.table-view summary { cursor: pointer; color: var(--accent-ink); width: f
         </dl>
         <p class="specimen-note">Mesuré sur <span data-fill="n-test">1&#8239;470</span> textes que le modèle n'a jamais vus.</p>
         <div class="actions">
-          <a class="btn btn-primary" href="#essayer">Lancer la démo</a>
+          <a class="btn btn-primary" href="#essayer" id="hero-cta">Essayer la démo</a>
           <a class="btn" href="https://github.com/liliandoublet/sherlock">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"></path></svg>
             Voir le code
@@ -547,11 +547,16 @@ details.table-view summary { cursor: pointer; color: var(--accent-ink); width: f
     <div class="wrap">
       <div class="block-head">
         <p class="eyebrow">Démo Streamlit</p>
-        <h2 id="essayer-titre">Lancer la démo sur ton ordinateur</h2>
-        <p>Colle n'importe quel texte politique en français : tweet, communiqué, extrait de discours. Au premier lancement, le modèle (environ 420&nbsp;Mo) est téléchargé depuis Hugging Face.</p>
+        <h2 id="essayer-titre">Essayer la démo</h2>
+        <p>Colle n'importe quel texte politique en français : tweet, communiqué, extrait de discours. En local, le premier lancement télécharge le modèle (environ 420&nbsp;Mo) depuis Hugging Face.</p>
       </div>
       <div class="run-grid">
         <div class="run-steps">
+          <div class="run-option" id="run-online" hidden>
+            <h3>En ligne</h3>
+            <p>Rien à installer : la démo tourne sur un serveur Hugging Face. Après quelques jours sans visite, le serveur se met en veille et le premier chargement prend une à deux minutes.</p>
+            <p><a class="btn btn-primary" id="online-link" href="#essayer">Ouvrir la démo en ligne</a></p>
+          </div>
           <div class="run-option">
             <h3>Avec Docker</h3>
             <p>Le plus simple : rien d'autre à installer.</p>
@@ -564,7 +569,7 @@ details.table-view summary { cursor: pointer; color: var(--accent-ink); width: f
 uv run --extra demo streamlit run app/streamlit_app.py</code></pre></div>
           </div>
           <p class="fig-note">Puis ouvre <a href="http://localhost:8501">http://localhost:8501</a>.</p>
-          <p class="privacy">Le modèle tourne sur ta machine. Le texte que tu saisis n'est ni enregistré ni envoyé à un service tiers.</p>
+          <p class="privacy">En local, le modèle tourne sur ta machine : le texte que tu saisis n'est ni enregistré ni envoyé à un service tiers.<span id="privacy-online" hidden> En ligne, il est envoyé au serveur Hugging Face pour l'analyse, sans être enregistré par l'appli.</span></p>
         </div>
         <div class="run-option">
           <h3>Lire le résultat</h3>
@@ -802,6 +807,16 @@ uv run --extra demo streamlit run app/streamlit_app.py</code></pre></div>
       tip: `${party} : ${pct(score)}`,
       aria: `${party} : ${pct(score)}`,
     })));
+  }
+
+  // ── Démo en ligne (Space Hugging Face), si elle existe ─
+  if (DATA.demo_url) {
+    const cta = document.getElementById("hero-cta");
+    cta.href = DATA.demo_url;
+    cta.textContent = "Essayer en ligne";
+    document.getElementById("online-link").href = DATA.demo_url;
+    document.getElementById("run-online").hidden = false;
+    document.getElementById("privacy-online").hidden = false;
   }
 
   // ── Chiffres clés ────────────────────────────────────

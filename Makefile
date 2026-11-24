@@ -9,7 +9,7 @@ RUN := uv run
 SHERLOCK := $(RUN) sherlock
 
 .PHONY: help install install-demo data eval-legacy baselines train train-ablation report site all \
-        site-serve mlflow demo demo-local publish-model test lint format docker-build docker-run
+        site-serve mlflow demo demo-local publish-model publish-space test lint format docker-build docker-run
 
 help:
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -60,6 +60,9 @@ publish-model: ## Publie le modèle V6 sur Hugging Face (nécessite `hf auth log
 	$(eval REPO := $(shell $(RUN) python -c "from sherlock.config import cfg; print(cfg.demo.model)"))
 	$(RUN) hf upload $(REPO) models/legacy/camembert_v6_meta .
 	$(RUN) hf upload $(REPO) docs/model_card.md README.md
+
+publish-space: ## Met la démo en ligne sur un Space Hugging Face (nécessite `hf auth login`)
+	$(SHERLOCK) publish-space
 
 test: ## Tests unitaires + couverture
 	$(RUN) pytest

@@ -82,6 +82,7 @@ class MLflowConfig(BaseModel):
 
 class DemoConfig(BaseModel):
     model: str
+    space: str | None = None  # Space Hugging Face de la démo en ligne (utilisateur/nom)
 
 
 # ── Modèle principal ──────────────────────────────────────────────────────────

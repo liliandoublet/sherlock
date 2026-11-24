@@ -69,3 +69,5 @@ demo:
   # Modèle servi par la démo publique : identifiant Hugging Face Hub ou dossier local.
   # Surchargeable avec la variable d'environnement SHERLOCK_MODEL.
   model: "liliandoublet/sherlock-camembert-v6"
+  # Démo en ligne : Space Hugging Face publié par `make publish-space`.
+  space: "liliandoublet/sherlock"
